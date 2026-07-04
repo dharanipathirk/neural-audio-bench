@@ -7,6 +7,8 @@
 #include <array>
 #include <string>
 #include <vector>
+#include <cstdio>
+#include <cstdlib>
 
 // ---------------------------------------------------------------------------
 // Runtime benchmark configuration, loaded from benchmark_config.json.
@@ -129,31 +131,43 @@ inline std::string modelTorchScriptPath(ModelType m, ModelSize s, const std::str
 }
 
 // ---------------------------------------------------------------------------
-// Runtime config loaded from JSON
+// Runtime config loaded from JSON.
+//
+// The config file is REQUIRED and must be complete: there are no compiled-in
+// parameter defaults. A missing file, a parse error, or a missing key is a
+// fatal error. This guarantees that what ran is exactly what the config says
+// — the resolved config written next to the results is the full record.
+// Layering (base config <- experiment preset <- CLI overrides) happens in the
+// Python `nab run` frontend, which passes a fully-resolved file down.
 // ---------------------------------------------------------------------------
 struct BenchmarkRuntimeConfig
 {
-    double sampleRate = 48000.0;
+    double sampleRate = 0.0;
 
     // Isolated benchmark
-    std::vector<int> isolatedBufferSizes = {32, 64, 128, 256, 512, 1024};
-    int isolatedWarmupIterations = 100;
-    double isolatedTargetSeconds = 5.0;
-    int isolatedMinIterations = 500;
-    int isolatedReps = 3;
-    double isolatedThroughputSeconds = 10.0;
+    std::vector<int> isolatedBufferSizes;
+    int isolatedWarmupIterations = 0;
+    double isolatedTargetSeconds = 0.0;
+    int isolatedMinIterations = 0;
+    int isolatedReps = 0;
+    double isolatedThroughputSeconds = 0.0;
 
     // Contention benchmark
-    std::vector<int> contentionBufferSizes = {64, 128, 512};
-    std::vector<int> contentionLevels = {0, 8, 24, 36};
-    std::vector<int> instanceCounts = {1, 2, 4, 8, 12, 16};
-    std::vector<int> neuralTrackDepths = {1, 3, 5, 7};  // Dimension C: serial depth on neural track
+    std::vector<int> contentionBufferSizes;
+    std::vector<int> contentionLevels;
+    std::vector<int> instanceCounts;
+    std::vector<int> neuralTrackDepths;  // Dimension C: serial depth on neural track
     bool useSystemAU = true;  // Dimension A: true = real macOS system AUs, false = custom DSP
-    int contentionWarmupCallbacks = 200;
-    double contentionWarmupMinSeconds = 3.0;
-    int contentionMeasureSeconds = 15;
-    int contentionReps = 2;
-    int contentionNumTracks = 36;
+    int contentionWarmupCallbacks = 0;
+    double contentionWarmupMinSeconds = 0.0;
+    int contentionMeasureSeconds = 0;
+    int contentionReps = 0;
+    int contentionNumTracks = 0;
+
+    // Optional: path to the model manifest (relative to the config file's
+    // directory) and accepted virtual output device names for contention mode.
+    std::string modelsManifest;
+    std::vector<std::string> virtualOutputDevices = {"BlackHole"};
 
     // Which model architectures to test
     bool modelEnabled[3] = {true, true, true}; // lstm, tcn, wavenet
@@ -161,58 +175,85 @@ struct BenchmarkRuntimeConfig
     // Which sizes to test
     bool sizeEnabled[3] = {true, true, true}; // small, medium, large
 
-    // Which backends to test (indexed by BackendType enum, default: all enabled)
+    // Which backends to test (indexed by BackendType enum)
     bool backendEnabled[static_cast<int>(BackendType::COUNT)] = {true, true, true, true, true, true, true};
+
+    [[noreturn]] static void fail(const std::string& configPath, const std::string& msg)
+    {
+        fprintf(stderr, "ERROR: config %s: %s\n", configPath.c_str(), msg.c_str());
+        fprintf(stderr, "  The config must be a complete document (see configs/base.json and\n"
+                        "  schemas/config.schema.json). There are no compiled-in defaults.\n");
+        exit(1);
+    }
 
     static BenchmarkRuntimeConfig load(const std::string& configPath)
     {
         BenchmarkRuntimeConfig cfg;
         std::ifstream f(configPath);
         if (!f.is_open())
+            fail(configPath, "file not found");
+
+        nlohmann::json j;
+        try
         {
-            fprintf(stderr, "Config: %s not found, using defaults\n", configPath.c_str());
-            return cfg;
+            f >> j;
+        }
+        catch (const std::exception& e)
+        {
+            fail(configPath, std::string("parse error: ") + e.what());
         }
 
         try
         {
-            nlohmann::json j;
-            f >> j;
+            // Every parameter key is required — a missing key is a config bug,
+            // not a request for a default.
+            auto require = [&](const nlohmann::json& obj, const char* section, const char* key) -> const nlohmann::json& {
+                if (!obj.contains(key))
+                    fail(configPath, std::string("missing required key '") + section + "." + key + "'");
+                return obj.at(key);
+            };
 
-            if (j.contains("sample_rate")) cfg.sampleRate = j["sample_rate"];
+            if (!j.contains("sample_rate")) fail(configPath, "missing required key 'sample_rate'");
+            cfg.sampleRate = j["sample_rate"];
 
-            if (j.contains("isolated"))
+            if (!j.contains("isolated")) fail(configPath, "missing required section 'isolated'");
             {
                 auto& iso = j["isolated"];
-                if (iso.contains("buffer_sizes")) cfg.isolatedBufferSizes = iso["buffer_sizes"].get<std::vector<int>>();
-                if (iso.contains("warmup_iterations")) cfg.isolatedWarmupIterations = iso["warmup_iterations"];
-                if (iso.contains("target_measure_seconds")) cfg.isolatedTargetSeconds = iso["target_measure_seconds"];
-                if (iso.contains("min_iterations")) cfg.isolatedMinIterations = iso["min_iterations"];
-                if (iso.contains("num_reps")) cfg.isolatedReps = iso["num_reps"];
-                if (iso.contains("throughput_seconds")) cfg.isolatedThroughputSeconds = iso["throughput_seconds"];
+                cfg.isolatedBufferSizes = require(iso, "isolated", "buffer_sizes").get<std::vector<int>>();
+                cfg.isolatedWarmupIterations = require(iso, "isolated", "warmup_iterations");
+                cfg.isolatedTargetSeconds = require(iso, "isolated", "target_measure_seconds");
+                cfg.isolatedMinIterations = require(iso, "isolated", "min_iterations");
+                cfg.isolatedReps = require(iso, "isolated", "num_reps");
+                cfg.isolatedThroughputSeconds = require(iso, "isolated", "throughput_seconds");
             }
 
-            if (j.contains("contention"))
+            if (!j.contains("contention")) fail(configPath, "missing required section 'contention'");
             {
                 auto& ct = j["contention"];
-                if (ct.contains("buffer_sizes")) cfg.contentionBufferSizes = ct["buffer_sizes"].get<std::vector<int>>();
-                if (ct.contains("contention_levels")) cfg.contentionLevels = ct["contention_levels"].get<std::vector<int>>();
-                if (ct.contains("instance_counts")) cfg.instanceCounts = ct["instance_counts"].get<std::vector<int>>();
-                if (ct.contains("neural_track_depths")) cfg.neuralTrackDepths = ct["neural_track_depths"].get<std::vector<int>>();
-                if (ct.contains("use_system_au")) cfg.useSystemAU = ct["use_system_au"].get<bool>();
-                if (ct.contains("warmup_callbacks")) cfg.contentionWarmupCallbacks = ct["warmup_callbacks"];
-                if (ct.contains("warmup_min_seconds")) cfg.contentionWarmupMinSeconds = ct["warmup_min_seconds"];
-                if (ct.contains("measure_seconds")) cfg.contentionMeasureSeconds = ct["measure_seconds"];
-                if (ct.contains("num_reps")) cfg.contentionReps = ct["num_reps"];
-                if (ct.contains("num_tracks")) cfg.contentionNumTracks = ct["num_tracks"];
+                cfg.contentionBufferSizes = require(ct, "contention", "buffer_sizes").get<std::vector<int>>();
+                cfg.contentionLevels = require(ct, "contention", "contention_levels").get<std::vector<int>>();
+                cfg.instanceCounts = require(ct, "contention", "instance_counts").get<std::vector<int>>();
+                cfg.neuralTrackDepths = require(ct, "contention", "neural_track_depths").get<std::vector<int>>();
+                cfg.useSystemAU = require(ct, "contention", "use_system_au").get<bool>();
+                cfg.contentionWarmupCallbacks = require(ct, "contention", "warmup_callbacks");
+                cfg.contentionWarmupMinSeconds = require(ct, "contention", "warmup_min_seconds");
+                cfg.contentionMeasureSeconds = require(ct, "contention", "measure_seconds");
+                cfg.contentionReps = require(ct, "contention", "num_reps");
+                cfg.contentionNumTracks = require(ct, "contention", "num_tracks");
             }
 
-            if (j.contains("model_sizes"))
+            if (j.contains("models_manifest"))
+                cfg.modelsManifest = j["models_manifest"].get<std::string>();
+
+            if (j.contains("virtual_output_devices"))
+                cfg.virtualOutputDevices = j["virtual_output_devices"].get<std::vector<std::string>>();
+
+            if (!j.contains("model_sizes")) fail(configPath, "missing required section 'model_sizes'");
             {
                 auto& ms = j["model_sizes"];
-                if (ms.contains("small")) cfg.sizeEnabled[0] = ms["small"];
-                if (ms.contains("medium")) cfg.sizeEnabled[1] = ms["medium"];
-                if (ms.contains("large")) cfg.sizeEnabled[2] = ms["large"];
+                cfg.sizeEnabled[0] = require(ms, "model_sizes", "small").get<bool>();
+                cfg.sizeEnabled[1] = require(ms, "model_sizes", "medium").get<bool>();
+                cfg.sizeEnabled[2] = require(ms, "model_sizes", "large").get<bool>();
             }
 
             if (j.contains("model_types"))
@@ -223,14 +264,29 @@ struct BenchmarkRuntimeConfig
                 if (mt.contains("wavenet")) cfg.modelEnabled[2] = mt["wavenet"];
             }
 
-            if (j.contains("backends"))
+            if (!j.contains("backends")) fail(configPath, "missing required section 'backends'");
             {
                 auto& be = j["backends"];
+                // Reject unknown backend names (typo protection). Keys starting
+                // with '_' are comments.
+                for (auto it = be.begin(); it != be.end(); ++it)
+                {
+                    const std::string& key = it.key();
+                    if (!key.empty() && key[0] == '_')
+                        continue;
+                    bool known = false;
+                    for (int bi = 0; bi < static_cast<int>(BackendType::COUNT); bi++)
+                        if (key == backendTypeName(static_cast<BackendType>(bi)))
+                            known = true;
+                    if (!known)
+                        fail(configPath, "unknown backend '" + key + "' in 'backends'");
+                }
                 for (int bi = 0; bi < static_cast<int>(BackendType::COUNT); bi++)
                 {
                     auto name = std::string(backendTypeName(static_cast<BackendType>(bi)));
-                    if (be.contains(name) && be[name].is_boolean())
-                        cfg.backendEnabled[bi] = be[name].get<bool>();
+                    if (!be.contains(name))
+                        fail(configPath, "missing required key 'backends." + name + "'");
+                    cfg.backendEnabled[bi] = be[name].get<bool>();
                 }
             }
 
@@ -238,8 +294,7 @@ struct BenchmarkRuntimeConfig
         }
         catch (const std::exception& e)
         {
-            fprintf(stderr, "Config: parse error in %s: %s, using defaults\n",
-                    configPath.c_str(), e.what());
+            fail(configPath, std::string("invalid value: ") + e.what());
         }
 
         return cfg;

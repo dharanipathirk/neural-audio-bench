@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dharanipathirk/neural-audio-bench/schemas/config.schema.json",
+  "title": "neural-audio-bench configuration",
+  "type": "object",
+  "required": ["schema_version", "sample_rate", "models", "isolated", "contention", "backends", "model_sizes"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "sample_rate": { "type": "integer", "minimum": 8000 },
+    "models_manifest": {
+      "type": "string",
+      "description": "Path to the model manifest, relative to this config file's directory."
+    },
+    "virtual_output_devices": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Output device name substrings accepted for contention mode (a virtual loopback device delivers real callback deadline pressure without physical hardware)."
+    },
+    "models": {
+      "type": "object",
+      "description": "Architecture hyperparameters per size tier, consumed by the model exporter and the RTNeural catalog.",
+      "properties": {
+        "lstm": { "$ref": "#/$defs/sizeTiers" },
+        "tcn": { "$ref": "#/$defs/sizeTiers" },
+        "wavenet": { "$ref": "#/$defs/sizeTiers" }
+      },
+      "additionalProperties": { "$ref": "#/$defs/sizeTiers" }
+    },
+    "isolated": {
+      "type": "object",
+      "required": ["buffer_sizes", "warmup_iterations", "target_measure_seconds", "min_iterations", "num_reps", "throughput_seconds"],
+      "properties": {
+        "buffer_sizes": { "$ref": "#/$defs/bufferSizes" },
+        "warmup_iterations": { "type": "integer", "minimum": 0 },
+        "target_measure_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "min_iterations": { "type": "integer", "minimum": 1 },
+        "num_reps": { "type": "integer", "minimum": 1 },
+        "throughput_seconds": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "contention": {
+      "type": "object",
+      "required": ["buffer_sizes", "contention_levels", "instance_counts", "warmup_callbacks", "warmup_min_seconds", "measure_seconds", "num_reps", "num_tracks"],
+      "properties": {
+        "buffer_sizes": { "$ref": "#/$defs/bufferSizes" },
+        "contention_levels": { "type": "array", "items": { "type": "integer", "minimum": 0 } },
+        "instance_counts": { "type": "array", "items": { "type": "integer", "minimum": 1 } },
+        "neural_track_depths": { "type": "array", "items": { "type": "integer", "minimum": 1 } },
+        "use_system_au": { "type": "boolean" },
+        "warmup_callbacks": { "type": "integer", "minimum": 0 },
+        "warmup_min_seconds": { "type": "number", "minimum": 0 },
+        "measure_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "num_reps": { "type": "integer", "minimum": 1 },
+        "num_tracks": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "backends": {
+      "type": "object",
+      "description": "Backend name -> enabled. Names must match registered backend names; unknown names are rejected at load time.",
+      "patternProperties": {
+        "^_": {},
+        "^[A-Za-z]": { "type": "boolean" }
+      }
+    },
+    "model_sizes": {
+      "type": "object",
+      "patternProperties": {
+        "^_": {},
+        "^[A-Za-z]": { "type": "boolean" }
+      }
+    }
+  },
+  "patternProperties": { "^_": {} },
+  "additionalProperties": false,
+  "$defs": {
+    "bufferSizes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "integer", "minimum": 1, "maximum": 8192 }
+    },
+    "sizeTiers": {
+      "type": "object",
+      "patternProperties": {
+        "^_": {},
+        "^[A-Za-z]": { "type": "object", "additionalProperties": { "type": "number" } }
+      }
+    }
+  }
+}

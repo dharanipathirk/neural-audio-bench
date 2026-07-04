@@ -1,7 +1,13 @@
 {
-  "_comment": "Minimal test config — runs fast to verify everything works.",
+  "_comment": "Minimal smoke configuration — runs in a couple of minutes to verify the toolchain, models, and engine all work. Used by CI and as a quick local sanity check.",
+
+  "schema_version": 1,
 
   "sample_rate": 48000,
+
+  "models_manifest": "../models/manifest.json",
+
+  "virtual_output_devices": ["BlackHole"],
 
   "models": {
     "lstm": {
@@ -34,6 +40,7 @@
     "buffer_sizes": [128],
     "contention_levels": [0, 36],
     "instance_counts": [1, 4],
+    "neural_track_depths": [1, 3],
     "use_system_au": true,
     "warmup_callbacks": 50,
     "warmup_min_seconds": 2.0,

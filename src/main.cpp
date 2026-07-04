@@ -96,16 +96,21 @@ int main(int argc, char* argv[])
 
     std::string modelDir = modelDirOverride.empty() ? MODEL_DIR : modelDirOverride;
 
-    // Config path: explicit --config, or modelDir/../benchmark_config.json
-    std::string configPath = configPathOverride.empty()
-        ? modelDir + "/../benchmark_config.json"
-        : configPathOverride;
+    // A config file is required — there are no compiled-in defaults.
+    if (configPathOverride.empty())
+    {
+        fprintf(stderr, "ERROR: --config is required (e.g. --config configs/base.json).\n"
+                        "  Use `nab run` for config layering (base <- experiment <- overrides),\n"
+                        "  or pass a complete config file directly.\n");
+        return 1;
+    }
+    std::string configPath = configPathOverride;
 
     // Load config early so we can print the actual sample rate
     auto globalCfg = BenchmarkRuntimeConfig::load(configPath);
 
     fprintf(stderr, "========================================\n");
-    fprintf(stderr, "BNNSGraph vs RTNeural vs anira Benchmark\n");
+    fprintf(stderr, "neural-audio-bench engine\n");
     fprintf(stderr, "========================================\n");
     fprintf(stderr, "Mode: %s\n", mode.c_str());
     fprintf(stderr, "Models: %s\n", modelDir.c_str());
@@ -190,16 +195,23 @@ int main(int argc, char* argv[])
             return 1;
         }
 
-        // Require BlackHole for contention benchmarks — real-time deadline
-        // pressure on a non-virtual device produces non-reproducible results.
+        // Require a virtual loopback device for contention benchmarks —
+        // real-time deadline pressure on a physical device produces
+        // non-reproducible results. Accepted device names come from the
+        // config's virtual_output_devices list (default: BlackHole).
         {
             auto deviceName = device->getName();
-            if (!deviceName.containsIgnoreCase("BlackHole"))
+            bool accepted = false;
+            for (const auto& v : globalCfg.virtualOutputDevices)
+                if (deviceName.containsIgnoreCase(juce::String(v)))
+                    accepted = true;
+
+            if (!accepted)
             {
-                fprintf(stderr, "ERROR: Audio device '%s' is not BlackHole.\n",
+                fprintf(stderr, "ERROR: Audio device '%s' is not an accepted virtual output device.\n",
                         deviceName.toRawUTF8());
-                fprintf(stderr, "  Contention benchmarks require BlackHole for reproducible\n"
-                        "  real-time deadline pressure without acoustic output.\n"
+                fprintf(stderr, "  Contention benchmarks require a virtual loopback device for\n"
+                        "  reproducible real-time deadline pressure without acoustic output.\n"
                         "  Install: brew install blackhole-2ch\n"
                         "  Then set BlackHole as the default output device.\n"
                         "  To override: --allow-any-device\n");

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dharanipathirk/neural-audio-bench/schemas/model-manifest.schema.json",
+  "title": "neural-audio-bench model manifest",
+  "description": "Catalog of models available to the benchmark. Bring your own model by adding an entry: point the format paths at your exported files. Backends pick the path matching their required format.",
+  "type": "object",
+  "required": ["schema_version", "models"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "models_root": {
+      "type": "string",
+      "description": "Directory that format paths are relative to; itself relative to this manifest file. Defaults to the manifest's directory."
+    },
+    "models": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "arch", "state", "channels", "formats"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+          "arch": { "type": "string", "description": "Architecture family (lstm, tcn, wavenet, or a custom name)." },
+          "size": { "type": "string", "description": "Size tier used by config model_sizes selection (e.g. small/medium/large)." },
+          "display_name": { "type": "string" },
+          "state": { "enum": ["stateful", "stateless"] },
+          "channels": { "type": "integer", "minimum": 1 },
+          "param_count": { "type": "integer", "minimum": 0 },
+          "hyperparams": { "type": "object", "additionalProperties": { "type": "number" } },
+          "formats": {
+            "type": "object",
+            "description": "Format name -> file path relative to models_root. At least one format is required; a backend is skipped (with a reason) for models lacking its required format.",
+            "minProperties": 1,
+            "properties": {
+              "coreml": { "type": "string" },
+              "onnx": { "type": "string" },
+              "torchscript": { "type": "string" },
+              "rtneural": { "type": "string" }
+            },
+            "additionalProperties": { "type": "string" }
+          },
+          "notes": { "type": "string" }
+        },
+        "patternProperties": { "^_": {} },
+        "additionalProperties": false
+      }
+    }
+  },
+  "patternProperties": { "^_": {} },
+  "additionalProperties": false
+}

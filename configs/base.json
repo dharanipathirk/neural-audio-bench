@@ -1,7 +1,13 @@
 {
-  "_comment": "Single source of truth for all benchmark parameters. Read by both Python export and C++ benchmark.",
+  "_comment": "neural-audio-bench base configuration. Authoritative defaults for every parameter: the engine fails fast if no config is provided — there are no compiled-in fallbacks. Layering: base.json <- experiment preset <- CLI overrides. Paths are relative to this file's directory.",
+
+  "schema_version": 1,
 
   "sample_rate": 48000,
+
+  "models_manifest": "../models/manifest.json",
+
+  "virtual_output_devices": ["BlackHole"],
 
   "models": {
     "lstm": {
@@ -35,7 +41,7 @@
     "contention_levels": [0, 8, 24, 36],
     "instance_counts": [1, 2, 4, 8, 16],
     "neural_track_depths": [1, 3, 5, 7],
-    "_neural_track_depth_presets": "1=bare, 3=channel_strip (EQ+Comp→Neural), 5=mix_fx (+Delay+Reverb), 7=heavy_chain (+EQ+Comp)",
+    "_neural_track_depth_presets": "1=bare, 3=channel_strip (EQ+Comp->Neural), 5=mix_fx (+Delay+Reverb), 7=heavy_chain (+EQ+Comp)",
     "use_system_au": true,
     "_use_system_au_comment": "true = Dimension A uses real macOS system AUs (AUParametricEQ, AUDynamicsProcessor, etc.); false = lightweight custom DSP (biquad EQ, compressor, reverb, delay)",
     "warmup_callbacks": 200,
@@ -46,7 +52,7 @@
   },
 
   "backends": {
-    "_comment": "Which backends to test. Set false to skip. Backends unavailable at compile time are always skipped.",
+    "_comment": "Which backends to test. Set false to skip. Backends unavailable at compile time are always skipped (and reported as such in the results).",
     "BNNSGraph": true,
     "RTNeural_Eigen": true,
     "RTNeural_XSIMD": true,

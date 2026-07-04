@@ -1,15 +1,13 @@
-#!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Dharanipathi Rathna Kumar Balasubramaniam
 """
 Analyze benchmark results: merge CSVs, compute derived metrics.
 
 Usage:
-  uv run analysis/analyze_results.py [--isolated results/isolated.csv] [--contention results/contention.csv]
+  nab analyze [--isolated results/isolated.csv] [--contention results/contention.csv]
 """
 
 import argparse
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -67,9 +65,7 @@ def compute_degradation(isolated: pd.DataFrame, contention: pd.DataFrame) -> pd.
     """
     # Get isolated RTF at buffer 128
     iso_128 = (
-        isolated[
-            (isolated["buffer_size"] == 128) & (isolated["mode"] == "callback")
-        ]
+        isolated[(isolated["buffer_size"] == 128) & (isolated["mode"] == "callback")]
         .groupby(["backend", "model", "model_size"])["rtf"]
         .median()
         .reset_index()
@@ -106,9 +102,7 @@ def print_summary(isolated: pd.DataFrame):
             )
 
     # Per-buffer summary at buffer=128
-    buf128 = isolated[
-        (isolated["buffer_size"] == 128) & (isolated["mode"] == "callback")
-    ]
+    buf128 = isolated[(isolated["buffer_size"] == 128) & (isolated["mode"] == "callback")]
     if not buf128.empty:
         print("\n--- Per-buffer latency at buffer=128 (median, ns) ---")
         summary = (
@@ -133,22 +127,14 @@ def print_summary(isolated: pd.DataFrame):
 
     # Dropout analysis
     print("\n--- Dropout analysis (buffer=32, hardest deadline) ---")
-    buf32 = isolated[
-        (isolated["buffer_size"] == 32) & (isolated["mode"] == "callback")
-    ]
+    buf32 = isolated[(isolated["buffer_size"] == 32) & (isolated["mode"] == "callback")]
     if not buf32.empty:
         summary32 = (
-            buf32.groupby(["backend", "model", "model_size"])["dropouts"]
-            .sum()
-            .reset_index()
+            buf32.groupby(["backend", "model", "model_size"])["dropouts"].sum().reset_index()
         )
         for _, row in summary32.iterrows():
-            status = (
-                "PASS" if row["dropouts"] == 0 else f"FAIL ({int(row['dropouts'])} xruns)"
-            )
-            print(
-                f"  {row['backend']:20s} / {row['model']:8s} / {row['model_size']:8s}: {status}"
-            )
+            status = "PASS" if row["dropouts"] == 0 else f"FAIL ({int(row['dropouts'])} xruns)"
+            print(f"  {row['backend']:20s} / {row['model']:8s} / {row['model_size']:8s}: {status}")
 
 
 def print_contention_summary(df_neural: pd.DataFrame, df_cb: pd.DataFrame):
@@ -176,7 +162,9 @@ def print_contention_summary(df_neural: pd.DataFrame, df_cb: pd.DataFrame):
         )
 
         for _, row in summary.iterrows():
-            inf_str = f"  inf_underruns={int(row['inf_underruns'])}" if row["inf_underruns"] > 0 else ""
+            inf_str = (
+                f"  inf_underruns={int(row['inf_underruns'])}" if row["inf_underruns"] > 0 else ""
+            )
             print(
                 f"  {row['backend']:20s} / {row['model']:8s} / {row['model_size']:8s} / "
                 f"contention={row['contention_level']:>2d}: "
@@ -198,9 +186,7 @@ def print_contention_summary(df_neural: pd.DataFrame, df_cb: pd.DataFrame):
         ):
             sustainable = group[group["util_p99"] < 100.0]
             max_inst = sustainable["instance_count"].max() if not sustainable.empty else 0
-            print(
-                f"  {backend:20s} / {model:8s} / {model_size:8s}: max {max_inst} instances"
-            )
+            print(f"  {backend:20s} / {model:8s} / {model_size:8s}: max {max_inst} instances")
 
     # --- hw_xruns summary ---
     all_neural = df_neural.copy()
@@ -264,7 +250,9 @@ def print_contention_summary(df_neural: pd.DataFrame, df_cb: pd.DataFrame):
             .reset_index()
         )
         for _, row in cb_summary.iterrows():
-            inf_str = f"  inf_underruns={int(row['inf_underruns'])}" if row["inf_underruns"] > 0 else ""
+            inf_str = (
+                f"  inf_underruns={int(row['inf_underruns'])}" if row["inf_underruns"] > 0 else ""
+            )
             print(
                 f"  {row['backend']:20s} / {row['model']:8s} / {row['model_size']:8s} / "
                 f"{row['dimension']:12s} / buf={int(row['buffer_size']):>4d}: "
@@ -274,13 +262,13 @@ def print_contention_summary(df_neural: pd.DataFrame, df_cb: pd.DataFrame):
             )
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Analyze benchmark results")
+def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--isolated", default="results/isolated.csv")
     parser.add_argument("--contention", default="results/contention.csv")
     parser.add_argument("--output", default="results/analysis_summary.csv")
-    args = parser.parse_args()
 
+
+def run(args: argparse.Namespace) -> int:
     if Path(args.isolated).exists():
         isolated = load_isolated(args.isolated)
         print_summary(isolated)
@@ -315,6 +303,14 @@ def main():
     else:
         print(f"\nContention results not found: {args.contention}")
 
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Analyze benchmark results")
+    add_arguments(parser)
+    return run(parser.parse_args(argv))
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

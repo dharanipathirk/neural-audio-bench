@@ -30,7 +30,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = REPO_ROOT / "benchmark_config.json"
 DEFAULT_BENCH = REPO_ROOT / "build" / "nab-engine"
 DEFAULT_MODELS = REPO_ROOT / "models"
-DECODE_AMX = REPO_ROOT / "analysis" / "decode_amx.py"
+DECODE_AMX = Path(__file__).resolve().parent / "decode_amx.py"
 
 ALL_BACKENDS = [
     "BNNSGraph",

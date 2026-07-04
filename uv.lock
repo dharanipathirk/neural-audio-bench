@@ -615,7 +615,7 @@ wheels = [
 [[package]]
 name = "neural-audio-bench"
 version = "1.0.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "coremltools" },
     { name = "matplotlib" },

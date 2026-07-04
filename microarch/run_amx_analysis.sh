@@ -8,7 +8,7 @@ set -euo pipefail
 #
 # Runs nab-engine in isolated mode for each backend, attaches decode_amx.py
 # to capture AMX instruction mix, and writes per-backend JSON files to
-# analysis/amx_results/.
+# microarch/amx_results/.
 #
 # Environment overrides:
 #   BENCH_BIN  – path to nab-engine binary  (default: ./build/nab-engine)
@@ -18,17 +18,17 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-BENCH_BIN="${BENCH_BIN:-${REPO_ROOT}/build/nab-engine}"
+BENCH_BIN="${BENCH_BIN:-./build/nab-engine}"
 PYTHON="${PYTHON:-uv run}"
-RESULTS_DIR="${REPO_ROOT}/analysis/amx_results"
-DECODE_SCRIPT="${REPO_ROOT}/analysis/decode_amx.py"
+RESULTS_DIR="${SCRIPT_DIR}/amx_results"
+DECODE_SCRIPT="${SCRIPT_DIR}/decode_amx.py"
 
 mkdir -p "${RESULTS_DIR}"
 
 # Backends to scan.  Each entry must match a BackendType name in BenchmarkConfig.h.
 # The benchmark binary runs all available backends; the AMX decoder observes
 # whichever AMX instructions fire while it is attached.  To isolate a single
-# backend, set "backends" in benchmark_config.json (only the target → true,
+# backend, set "backends" in the benchmark config (only the target → true,
 # all others → false) before running this script.
 BACKENDS=(
     "BNNSGraph"
@@ -56,7 +56,7 @@ scan_backend() {
 
     # Launch bench in background; suppress its output.
     # Note: --backend is NOT a valid CLI flag; backend selection is done via
-    # benchmark_config.json.  The binary runs whatever backends are enabled.
+    # the benchmark config.  The binary runs whatever backends are enabled.
     "${BENCH_BIN}" --mode isolated --output /dev/null \
         >/dev/null 2>&1 &
     local bench_pid=$!

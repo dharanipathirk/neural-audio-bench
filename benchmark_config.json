@@ -1,0 +1,65 @@
+{
+  "_comment": "Single source of truth for all benchmark parameters. Read by both Python export and C++ benchmark.",
+
+  "sample_rate": 48000,
+
+  "models": {
+    "lstm": {
+      "small":  { "hidden": 20 },
+      "medium": { "hidden": 40 },
+      "large":  { "hidden": 96 }
+    },
+    "tcn": {
+      "small":  { "channels": 16, "kernel_size": 3, "num_layers": 4 },
+      "medium": { "channels": 32, "kernel_size": 3, "num_layers": 8 },
+      "large":  { "channels": 48, "kernel_size": 3, "num_layers": 10 }
+    },
+    "wavenet": {
+      "small":  { "channels": 8,  "kernel_size": 2, "num_layers": 3 },
+      "medium": { "channels": 16, "kernel_size": 2, "num_layers": 10 },
+      "large":  { "channels": 32, "kernel_size": 2, "num_layers": 10 }
+    }
+  },
+
+  "isolated": {
+    "buffer_sizes": [32, 64, 128, 256, 512, 1024],
+    "warmup_iterations": 100,
+    "target_measure_seconds": 5.0,
+    "min_iterations": 10000,
+    "num_reps": 1,
+    "throughput_seconds": 5.0
+  },
+
+  "contention": {
+    "buffer_sizes": [64, 128, 256, 512],
+    "contention_levels": [0, 8, 24, 36],
+    "instance_counts": [1, 2, 4, 8, 16],
+    "neural_track_depths": [1, 3, 5, 7],
+    "_neural_track_depth_presets": "1=bare, 3=channel_strip (EQ+Comp→Neural), 5=mix_fx (+Delay+Reverb), 7=heavy_chain (+EQ+Comp)",
+    "use_system_au": true,
+    "_use_system_au_comment": "true = Dimension A uses real macOS system AUs (AUParametricEQ, AUDynamicsProcessor, etc.); false = lightweight custom DSP (biquad EQ, compressor, reverb, delay)",
+    "warmup_callbacks": 200,
+    "warmup_min_seconds": 3.0,
+    "measure_seconds": 15,
+    "num_reps": 1,
+    "num_tracks": 36
+  },
+
+  "backends": {
+    "_comment": "Which backends to test. Set false to skip. Backends unavailable at compile time are always skipped.",
+    "BNNSGraph": true,
+    "RTNeural_Eigen": true,
+    "RTNeural_XSIMD": true,
+    "Direct_LibTorch": true,
+    "Direct_ONNX": true,
+    "Anira_LibTorch": true,
+    "Anira_ONNX": true
+  },
+
+  "model_sizes": {
+    "_comment": "Which model sizes to benchmark. Set false to skip.",
+    "small": true,
+    "medium": true,
+    "large": true
+  }
+}

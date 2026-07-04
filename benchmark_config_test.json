@@ -1,0 +1,60 @@
+{
+  "_comment": "Minimal test config — runs fast to verify everything works.",
+
+  "sample_rate": 48000,
+
+  "models": {
+    "lstm": {
+      "small":  { "hidden": 20 },
+      "medium": { "hidden": 40 },
+      "large":  { "hidden": 96 }
+    },
+    "tcn": {
+      "small":  { "channels": 16, "kernel_size": 3, "num_layers": 4 },
+      "medium": { "channels": 32, "kernel_size": 3, "num_layers": 8 },
+      "large":  { "channels": 48, "kernel_size": 3, "num_layers": 10 }
+    },
+    "wavenet": {
+      "small":  { "channels": 8,  "kernel_size": 2, "num_layers": 3 },
+      "medium": { "channels": 16, "kernel_size": 2, "num_layers": 10 },
+      "large":  { "channels": 32, "kernel_size": 2, "num_layers": 10 }
+    }
+  },
+
+  "isolated": {
+    "buffer_sizes": [128],
+    "warmup_iterations": 10,
+    "target_measure_seconds": 1.0,
+    "min_iterations": 100,
+    "num_reps": 1,
+    "throughput_seconds": 2.0
+  },
+
+  "contention": {
+    "buffer_sizes": [128],
+    "contention_levels": [0, 36],
+    "instance_counts": [1, 4],
+    "use_system_au": true,
+    "warmup_callbacks": 50,
+    "warmup_min_seconds": 2.0,
+    "measure_seconds": 5,
+    "num_reps": 1,
+    "num_tracks": 36
+  },
+
+  "backends": {
+    "BNNSGraph": true,
+    "RTNeural_Eigen": true,
+    "RTNeural_XSIMD": false,
+    "Direct_LibTorch": true,
+    "Direct_ONNX": true,
+    "Anira_LibTorch": false,
+    "Anira_ONNX": false
+  },
+
+  "model_sizes": {
+    "small": true,
+    "medium": false,
+    "large": false
+  }
+}

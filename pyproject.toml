@@ -1,0 +1,39 @@
+[project]
+name = "neural-audio-bench"
+version = "1.0.0"
+description = "A reproducible, extensible benchmarking suite for real-time neural audio inference"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+authors = [
+    { name = "Dharanipathi Rathna Kumar Balasubramaniam", email = "dharanipathirk@gmail.com" },
+]
+requires-python = ">=3.12"
+dependencies = [
+    "coremltools>=9.0",
+    "matplotlib>=3.10.8",
+    "numpy>=2.4.4",
+    "onnx>=1.21.0",
+    "onnxscript>=0.6.2",
+    "pandas>=3.0.2",
+    "seaborn>=0.13",
+    "torch>=2.11.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.9",
+    "jsonschema>=4.23",
+    "pre-commit>=4.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/python"]

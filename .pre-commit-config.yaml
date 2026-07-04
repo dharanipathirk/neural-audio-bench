@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-json
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ["--maxkb=512"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v19.1.7
+    hooks:
+      - id: clang-format
+        types_or: [c++, objective-c++]
+
+  - repo: local
+    hooks:
+      - id: forbid-model-binaries
+        name: forbid committed model binaries and OS junk
+        entry: model binaries (.onnx/.pt/.mlmodelc/.mlpackage) and .DS_Store must not be committed
+        language: fail
+        files: '(\.onnx|\.onnx\.data|\.pt|\.mlmodelc|\.mlpackage|\.DS_Store)'

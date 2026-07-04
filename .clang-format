@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++20
+IndentWidth: 4
+ColumnLimit: 100
+BreakBeforeBraces: Allman
+AccessModifierOffset: -4
+PointerAlignment: Left
+AlignAfterOpenBracket: Align
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+SortIncludes: false
+ObjCBlockIndentWidth: 4

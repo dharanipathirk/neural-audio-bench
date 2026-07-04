@@ -1,0 +1,39 @@
+# macOS
+.DS_Store
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv/
+
+# CMake / build outputs
+build/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# Generated code
+src/backends/RTNeuralCatalog.generated.h
+
+# Generated model artifacts (regenerate with `nab export`, or fetch from a GitHub Release)
+models/
+
+# Benchmark outputs
+results/
+runs/
+analysis/amx_results/
+microarch/results/
+
+# Logs
+*.log
+benchmark_log*.txt

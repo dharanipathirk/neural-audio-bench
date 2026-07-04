@@ -1,0 +1,30 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 28, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "Full suite (all backends, Eigen + XSIMD binaries)",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_XSIMD_VARIANT": "ON",
+        "BUILD_WITH_ANIRA": "ON"
+      }
+    },
+    {
+      "name": "minimal",
+      "displayName": "Minimal (BNNSGraph + RTNeural-Eigen + direct LibTorch/ONNX)",
+      "binaryDir": "${sourceDir}/build-minimal",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_XSIMD_VARIANT": "OFF",
+        "BUILD_WITH_ANIRA": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "default", "configurePreset": "default", "jobs": 0 },
+    { "name": "minimal", "configurePreset": "minimal", "jobs": 0 }
+  ]
+}

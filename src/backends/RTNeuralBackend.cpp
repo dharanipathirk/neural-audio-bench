@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Dharanipathi Rathna Kumar Balasubramaniam
-#include "RTNeuralPlugin.h"
+#include "RTNeuralBackend.h"
 
 // ---------------------------------------------------------------------------
 // RTNeuralEngine — dispatches to compile-time templates based on model+size
@@ -142,46 +142,51 @@ void RTNeuralEngine::resetState()
 }
 
 // ---------------------------------------------------------------------------
-// RTNeuralPlugin (Tracktion Engine)
+// RTNeuralBackend adapter
 // ---------------------------------------------------------------------------
 
-namespace tracktion { namespace engine {
-
-const char* RTNeuralPlugin::xmlTypeName = "rtNeuralPlugin";
-
-RTNeuralPlugin::RTNeuralPlugin(PluginCreationInfo info)
-    : Plugin(info)
+bool RTNeuralBackend::mapArchSize(const ModelSpec& spec, ModelType& m, ModelSize& s)
 {
+    if (spec.arch == "lstm")         m = ModelType::LSTM;
+    else if (spec.arch == "tcn")     m = ModelType::TCN;
+    else if (spec.arch == "wavenet") m = ModelType::WaveNet;
+    else return false;
+
+    if (spec.size == "small")        s = ModelSize::Small;
+    else if (spec.size == "medium")  s = ModelSize::Medium;
+    else if (spec.size == "large")   s = ModelSize::Large;
+    else return false;
+
+    return true;
 }
 
-void RTNeuralPlugin::initialise(const PluginInitialisationInfo& info)
+bool RTNeuralBackend::supports(const ModelSpec& spec, std::string& whyNot) const
 {
-    engine.initialize(modelType, modelSize, weightsPath);
-    timingLogger.allocate(static_cast<int>(SAMPLE_RATE * 30.0 / 32.0));
+    ModelType m; ModelSize s;
+    if (!mapArchSize(spec, m, s))
+    {
+        whyNot = std::string("RTNeural has no compiled variant for arch=") + spec.arch +
+                 " size=" + spec.size;
+        return false;
+    }
+    return true;
 }
 
-void RTNeuralPlugin::applyToBuffer(const PluginRenderContext& ctx)
+bool RTNeuralBackend::prepare(const PrepareContext& ctx)
 {
-    if (ctx.destBuffer == nullptr || !engine.isValid())
-        return;
+    if (ctx.model == nullptr)
+        return false;
 
-    auto* buffer = ctx.destBuffer;
-    const int numSamples = ctx.bufferNumSamples;
-    const int startSample = ctx.bufferStartSample;
+    ModelType m; ModelSize s;
+    if (!mapArchSize(*ctx.model, m, s))
+        return false;
 
-    timingLogger.recordStart();
+    // RTNeural uses random weights (see RTNeuralEngine::initialize); the
+    // weights path is passed through for parity but is not loaded.
+    std::string weights;
+    auto it = ctx.model->formatPaths.find("rtneural");
+    if (it != ctx.model->formatPaths.end())
+        weights = it->second;
 
-    // RTNeural processes sample-by-sample internally (Conv1DT limitation).
-    // processBlock wraps the per-sample loop — this IS RTNeural's natural mode.
-    auto* data = buffer->getWritePointer(0);
-    engine.processBlock(data + startSample, data + startSample, numSamples);
-
-    timingLogger.recordEnd();
+    return engine.initialize(m, s, weights);
 }
-
-void RTNeuralPlugin::reset()
-{
-    engine.resetState();
-}
-
-}} // namespace tracktion::engine

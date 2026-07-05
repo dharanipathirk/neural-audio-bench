@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Dharanipathi Rathna Kumar Balasubramaniam
-#include "AniraHandlerPlugin.h"
+#include "AniraBackend.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 #if HAS_ANIRA && defined(USE_ONNXRUNTIME)
@@ -80,25 +81,22 @@ OnnxModelInfo inspectOnnxModel(const std::string& modelPath)
 
 } // namespace
 
-namespace tracktion { namespace engine {
+// ===========================================================================
+// AniraLibTorchBackend
+// ===========================================================================
 
-// ---------------------------------------------------------------------------
-// AniraLibTorchHandlerPlugin
-// ---------------------------------------------------------------------------
-
-const char* AniraLibTorchHandlerPlugin::xmlTypeName = "aniraLibTorchHandler";
-
-AniraLibTorchHandlerPlugin::AniraLibTorchHandlerPlugin(PluginCreationInfo info) : Plugin(info) {}
-AniraLibTorchHandlerPlugin::~AniraLibTorchHandlerPlugin() = default;
-
-void AniraLibTorchHandlerPlugin::initialise(const PluginInitialisationInfo& info)
+bool AniraLibTorchBackend::prepare(const PrepareContext& ctx)
 {
 #if HAS_ANIRA && defined(USE_LIBTORCH)
-    int blockSize = info.blockSizeSamples;
-    double sampleRate = info.sampleRate;
+    if (ctx.model == nullptr)
+        return false;
+    auto it = ctx.model->formatPaths.find("torchscript");
+    if (it == ctx.model->formatPaths.end())
+        return false;
+    const std::string modelPath = it->second;
 
-    // Allocate timing logger for the measurement window
-    timingLogger.allocate(static_cast<int>(sampleRate * 30.0 / blockSize));
+    int blockSize = ctx.maxBlockSize;
+    double sampleRate = ctx.sampleRate;
 
     // Model processes [1, blockSize] -> [1, blockSize] (mono, block-at-a-time)
     config = std::make_unique<anira::InferenceConfig>(
@@ -129,15 +127,57 @@ void AniraLibTorchHandlerPlugin::initialise(const PluginInitialisationInfo& info
         true
     ));
 
+    latency = static_cast<int>(handler->get_latency());
     fprintf(stderr, "    AniraLibTorchHandler: model=%s block=%d latency=%u samples\n",
             modelPath.c_str(), blockSize, handler->get_latency());
+    return true;
 #else
-    juce::ignoreUnused(info);
+    (void)ctx;
     fprintf(stderr, "    AniraLibTorchHandler: anira or LibTorch not available\n");
+    return false;
 #endif
 }
 
-void AniraLibTorchHandlerPlugin::deinitialise()
+void AniraLibTorchBackend::preProcess(int n) noexcept
+{
+#if HAS_ANIRA
+    if (!handler) return;
+
+    // Check if background inference finished in time — if available samples
+    // are less than the buffer size, the output will be stale/repeated.
+    // (In the original AniraLibTorchHandlerPlugin this ran BEFORE recordStart,
+    // i.e. outside the timing window.)
+    size_t available = handler->get_available_samples(0, 0);
+    if (available < static_cast<size_t>(n))
+        inferenceUnderruns++;
+#else
+    (void)n;
+#endif
+}
+
+void AniraLibTorchBackend::process(const float* in, float* out, int n) noexcept
+{
+#if HAS_ANIRA
+    (void)in;
+    if (!handler) return;
+
+    float* channelData = out;
+    float* channels[] = { channelData };
+    handler->process(channels, static_cast<size_t>(n));
+#else
+    (void)in; (void)out; (void)n;
+#endif
+}
+
+void AniraLibTorchBackend::reset() noexcept
+{
+#if HAS_ANIRA
+    if (handler)
+        handler->reset();
+#endif
+}
+
+void AniraLibTorchBackend::teardown()
 {
 #if HAS_ANIRA
     handler.reset();
@@ -146,55 +186,24 @@ void AniraLibTorchHandlerPlugin::deinitialise()
 #endif
 }
 
-void AniraLibTorchHandlerPlugin::applyToBuffer(const PluginRenderContext& ctx)
-{
-#if HAS_ANIRA
-    if (!handler || ctx.destBuffer == nullptr) return;
+// ===========================================================================
+// AniraOnnxBackend
+// ===========================================================================
 
-    // Check if background inference finished in time — if available samples
-    // are less than the buffer size, the output will be stale/repeated.
-    size_t available = handler->get_available_samples(0, 0);
-    if (available < static_cast<size_t>(ctx.bufferNumSamples))
-        inferenceUnderruns++;
-
-    timingLogger.recordStart();
-
-    float* channelData = ctx.destBuffer->getWritePointer(0) + ctx.bufferStartSample;
-    float* channels[] = { channelData };
-    handler->process(channels, static_cast<size_t>(ctx.bufferNumSamples));
-
-    timingLogger.recordEnd();
-#else
-    juce::ignoreUnused(ctx);
-#endif
-}
-
-void AniraLibTorchHandlerPlugin::reset()
-{
-#if HAS_ANIRA
-    if (handler)
-        handler->reset();
-#endif
-}
-
-// ---------------------------------------------------------------------------
-// AniraOnnxHandlerPlugin
-// ---------------------------------------------------------------------------
-
-const char* AniraOnnxHandlerPlugin::xmlTypeName = "aniraOnnxHandler";
-
-AniraOnnxHandlerPlugin::AniraOnnxHandlerPlugin(PluginCreationInfo info) : Plugin(info) {}
-AniraOnnxHandlerPlugin::~AniraOnnxHandlerPlugin() = default;
-
-void AniraOnnxHandlerPlugin::initialise(const PluginInitialisationInfo& info)
+bool AniraOnnxBackend::prepare(const PrepareContext& ctx)
 {
 #if HAS_ANIRA && defined(USE_ONNXRUNTIME)
-    int blockSize = info.blockSizeSamples;
-    double sampleRate = info.sampleRate;
+    if (ctx.model == nullptr)
+        return false;
+    auto it = ctx.model->formatPaths.find("onnx");
+    if (it == ctx.model->formatPaths.end())
+        return false;
+    const std::string modelPath = it->second;
+
+    int blockSize = ctx.maxBlockSize;
+    double sampleRate = ctx.sampleRate;
     const float maxInferenceTimeMs =
         static_cast<float>(blockSize) / static_cast<float>(sampleRate) * 1000.0f;
-
-    timingLogger.allocate(static_cast<int>(sampleRate * 30.0 / blockSize));
 
     const auto modelInfo = inspectOnnxModel(modelPath);
     hasExplicitStateLstm = modelInfo.hasExplicitStateLstm && modelInfo.hiddenSize > 0;
@@ -284,6 +293,8 @@ void AniraOnnxHandlerPlugin::initialise(const PluginInitialisationInfo& info)
         true
     ));
 
+    latency = static_cast<int>(handler->get_latency());
+
     if (hasExplicitStateLstm)
     {
         fprintf(stderr,
@@ -295,37 +306,22 @@ void AniraOnnxHandlerPlugin::initialise(const PluginInitialisationInfo& info)
         fprintf(stderr, "    AniraOnnxHandler: model=%s block=%d latency=%u samples\n",
                 modelPath.c_str(), blockSize, handler->get_latency());
     }
+    return true;
 #else
-    juce::ignoreUnused(info);
+    (void)ctx;
     fprintf(stderr, "    AniraOnnxHandler: anira or ONNX Runtime not available\n");
+    return false;
 #endif
 }
 
-void AniraOnnxHandlerPlugin::deinitialise()
+void AniraOnnxBackend::process(const float* in, float* out, int n) noexcept
 {
 #if HAS_ANIRA
-    handler.reset();
-    processor.reset();
-    config.reset();
-    hasExplicitStateLstm = false;
-    hiddenSize = 0;
-    audioInputScratch.clear();
-    hStateIn.clear();
-    cStateIn.clear();
-    hStateOut.clear();
-    cStateOut.clear();
-#endif
-}
+    (void)in;
+    if (!handler) return;
 
-void AniraOnnxHandlerPlugin::applyToBuffer(const PluginRenderContext& ctx)
-{
-#if HAS_ANIRA
-    if (!handler || ctx.destBuffer == nullptr) return;
-
-    timingLogger.recordStart();
-
-    float* channelData = ctx.destBuffer->getWritePointer(0) + ctx.bufferStartSample;
-    const size_t numSamples = static_cast<size_t>(ctx.bufferNumSamples);
+    float* channelData = out;
+    const size_t numSamples = static_cast<size_t>(n);
 
     if (hasExplicitStateLstm)
     {
@@ -364,14 +360,12 @@ void AniraOnnxHandlerPlugin::applyToBuffer(const PluginRenderContext& ctx)
         float* channels[] = { channelData };
         handler->process(channels, numSamples);
     }
-
-    timingLogger.recordEnd();
 #else
-    juce::ignoreUnused(ctx);
+    (void)in; (void)out; (void)n;
 #endif
 }
 
-void AniraOnnxHandlerPlugin::reset()
+void AniraOnnxBackend::reset() noexcept
 {
 #if HAS_ANIRA
     if (handler)
@@ -399,4 +393,18 @@ void AniraOnnxHandlerPlugin::reset()
 #endif
 }
 
-}} // namespace tracktion::engine
+void AniraOnnxBackend::teardown()
+{
+#if HAS_ANIRA
+    handler.reset();
+    processor.reset();
+    config.reset();
+    hasExplicitStateLstm = false;
+    hiddenSize = 0;
+    audioInputScratch.clear();
+    hStateIn.clear();
+    cStateIn.clear();
+    hStateOut.clear();
+    cStateOut.clear();
+#endif
+}

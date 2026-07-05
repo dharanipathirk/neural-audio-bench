@@ -37,22 +37,46 @@ set(COMMON_HEADERS
     src/TimingLogger.h
 )
 
+# Backend abstraction layer: verbatim inference engines + adapters + registry
+set(BACKEND_SOURCES
+    src/backends/InferenceBackend.h
+    src/backends/InferenceBackend.cpp
+    src/backends/BackendRegistry.h
+    src/backends/BackendRegistry.cpp
+    src/backends/backend_registration.cpp
+    src/backends/arena.hpp
+    src/backends/BnnsGraphBackend.h
+    src/backends/BnnsGraphBackend.mm
+    src/backends/RTNeuralBackend.h
+    src/backends/RTNeuralBackend.cpp
+    src/backends/LibTorchBackend.h
+    src/backends/LibTorchBackend.cpp
+    src/backends/OnnxRuntimeBackend.h
+    src/backends/OnnxRuntimeBackend.cpp
+    src/backends/AniraBackend.h
+    src/backends/AniraBackend.cpp
+)
+
+# Unified host plugin
+set(HOST_SOURCES
+    src/host/NeuralInferencePlugin.h
+    src/host/NeuralInferencePlugin.cpp
+)
+
+# Model manifest / catalog
+set(CORE_SOURCES
+    src/core/ModelManifest.h
+    src/core/ModelManifest.cpp
+)
+
 set(PLUGIN_SOURCES
-    src/plugins/BNNSGraphPlugin.h
-    src/plugins/BNNSGraphPlugin.mm
-    src/plugins/RTNeuralPlugin.h
-    src/plugins/RTNeuralPlugin.cpp
-    src/plugins/AniraPlugin.h
-    src/plugins/AniraPlugin.cpp
-    src/plugins/AniraHandlerPlugin.h
-    src/plugins/AniraHandlerPlugin.cpp
     src/plugins/ContentionPlugins.h
     src/plugins/ContentionPlugins.cpp
 )
 
-set(ISOLATED_SOURCES
-    src/isolated/IsolatedBenchmark.h
-    src/isolated/IsolatedBenchmark.cpp
+set(RUNNER_SOURCES
+    src/runners/IsolatedRunner.h
+    src/runners/IsolatedRunner.cpp
 )
 
 set(CONTENTION_SOURCES
@@ -74,8 +98,11 @@ function(nab_add_benchmark_target TARGET_NAME BINARY_NAME)
     add_executable(${TARGET_NAME}
         src/main.cpp
         ${COMMON_HEADERS}
+        ${BACKEND_SOURCES}
+        ${HOST_SOURCES}
+        ${CORE_SOURCES}
         ${PLUGIN_SOURCES}
-        ${ISOLATED_SOURCES}
+        ${RUNNER_SOURCES}
         ${CONTENTION_SOURCES}
     )
     set_target_properties(${TARGET_NAME} PROPERTIES OUTPUT_NAME "${BINARY_NAME}")
@@ -136,7 +163,7 @@ function(nab_add_benchmark_target TARGET_NAME BINARY_NAME)
     endif()
 
     set_source_files_properties(
-        src/plugins/BNNSGraphPlugin.mm
+        src/backends/BnnsGraphBackend.mm
         PROPERTIES COMPILE_FLAGS "-x objective-c++ -fobjc-arc"
     )
 endfunction()

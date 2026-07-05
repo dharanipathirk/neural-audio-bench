@@ -2,9 +2,8 @@
 // Copyright (C) 2026 Dharanipathi Rathna Kumar Balasubramaniam
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
+#include "InferenceBackend.h"
 #include <Accelerate/Accelerate.h>
-#include "../TimingLogger.h"
 #include <string>
 #include <vector>
 #include <cstdlib>
@@ -71,42 +70,20 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// Tracktion Engine plugin wrapping BNNSGraphEngine
+// Backend adapter wrapping BNNSGraphEngine
 // ---------------------------------------------------------------------------
-namespace tracktion { namespace engine {
-
-class BNNSGraphPlugin : public Plugin
+class BnnsGraphBackend : public InferenceBackend
 {
 public:
-    BNNSGraphPlugin(PluginCreationInfo info);
-    ~BNNSGraphPlugin() override;
+    bool prepare(const PrepareContext& ctx) override;
+    void process(const float* in, float* out, int n) noexcept override { engine.processBlock(in, out, n); }
+    void reset() noexcept override { engine.resetState(); }
+    void teardown() override { engine.deinitialize(); }
 
-    static const char* xmlTypeName;
-
-    juce::String getName() const override { return pluginName; }
-    juce::String getSelectableDescription() override { return getName(); }
-    juce::String getPluginType() override { return xmlTypeName; }
-
-    void initialise(const PluginInitialisationInfo& info) override;
-    void deinitialise() override;
-    void applyToBuffer(const PluginRenderContext& ctx) override;
-    void reset() override;
-
-    int getNumOutputChannelsGivenInputs(int numInputs) override { return juce::jmin(numInputs, 1); }
-    bool takesAudioInput() override { return true; }
-    bool isSynth() override { return false; }
-
-    // Configuration
-    void setModelPath(const std::string& path) { modelPath = path; }
-    void setPluginName(const juce::String& name) { pluginName = name; }
-
-    TimingLogger& getTimingLogger() { return timingLogger; }
+    const char* name() const override { return "BNNSGraph"; }
+    bool isRealtimeSafe() const override { return true; }
+    const char* requiredFormat() const override { return "coreml"; }
 
 private:
     BNNSGraphEngine engine;
-    std::string modelPath;
-    juce::String pluginName{"BNNSGraph"};
-    TimingLogger timingLogger;
 };
-
-}} // namespace tracktion::engine

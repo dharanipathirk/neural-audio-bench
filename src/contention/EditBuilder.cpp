@@ -1,20 +1,51 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Dharanipathi Rathna Kumar Balasubramaniam
 #include "EditBuilder.h"
-#include "../plugins/BNNSGraphPlugin.h"
-#include "../plugins/RTNeuralPlugin.h"
-#include "../plugins/AniraPlugin.h"
-#include "../plugins/AniraHandlerPlugin.h"
+#include "../host/NeuralInferencePlugin.h"
+#include "../backends/BackendRegistry.h"
 #include "../plugins/ContentionPlugins.h"
 
 #include <random>
 
 // ---------------------------------------------------------------------------
+// Shared neural-plugin attach (used by EditBuilder and AUSessionBuilder)
+// ---------------------------------------------------------------------------
+TimingLogger* attachNeuralPlugin(te::AudioTrack& track, BackendType backend,
+                                 const ModelSpec* spec, const juce::String& pluginName,
+                                 SessionTimingInfo& sessionInfo)
+{
+    if (spec == nullptr)
+        return nullptr;
+
+    auto plugin = track.edit.getPluginCache().createNewPlugin(
+        te::NeuralInferencePlugin::xmlTypeName, {});
+    auto* p = dynamic_cast<te::NeuralInferencePlugin*>(plugin.get());
+    if (p == nullptr)
+        return nullptr;
+
+    auto backendImpl = BackendRegistry::instance().create(backendTypeName(backend));
+    if (!backendImpl)
+        return nullptr;
+
+    p->setBackend(std::move(backendImpl));
+    p->setModelSpec(*spec);
+    p->setPluginName(pluginName);
+    track.pluginList.insertPlugin(plugin, 0, nullptr);
+
+    // Wire underrun getter/resetter uniformly (non-anira backends return 0).
+    sessionInfo.inferenceUnderrunGetters.push_back([p]() { return p->getInferenceUnderruns(); });
+    sessionInfo.inferenceUnderrunResetters.push_back([p]() { p->resetInferenceUnderruns(); });
+
+    return &p->getTimingLogger();
+}
+
+// ---------------------------------------------------------------------------
 // EditBuilder
 // ---------------------------------------------------------------------------
 
-EditBuilder::EditBuilder(te::Engine& engine, const std::string& modelDir)
-    : engine(engine), modelDir(modelDir) {}
+EditBuilder::EditBuilder(te::Engine& engine, const std::string& modelDir,
+                         const std::vector<ModelSpec>& specs)
+    : engine(engine), modelDir(modelDir), specs(specs) {}
 
 EditBuilder::~EditBuilder()
 {
@@ -58,10 +89,7 @@ void EditBuilder::registerPluginTypes()
     if (pluginsRegistered) return;
 
     auto& pm = engine.getPluginManager();
-    pm.createBuiltInType<te::BNNSGraphPlugin>();
-    pm.createBuiltInType<te::RTNeuralPlugin>();
-    pm.createBuiltInType<te::DirectLibTorchPlugin>();
-    pm.createBuiltInType<te::DirectOnnxPlugin>();
+    pm.createBuiltInType<te::NeuralInferencePlugin>();
     pm.createBuiltInType<te::ContentionEQPlugin>();
     pm.createBuiltInType<te::ContentionCompPlugin>();
     pm.createBuiltInType<te::ContentionReverbPlugin>();
@@ -69,8 +97,6 @@ void EditBuilder::registerPluginTypes()
     pm.createBuiltInType<te::NoiseGeneratorPlugin>();
     pm.createBuiltInType<te::CallbackStartPlugin>();
     pm.createBuiltInType<te::CallbackEndPlugin>();
-    pm.createBuiltInType<te::AniraLibTorchHandlerPlugin>();
-    pm.createBuiltInType<te::AniraOnnxHandlerPlugin>();
 
     pluginsRegistered = true;
 }
@@ -102,98 +128,29 @@ TimingLogger* EditBuilder::addNeuralPlugin(te::AudioTrack& track, BackendType ba
 {
     addAudioClip(track, clipDuration);
 
-    te::Plugin::Ptr plugin;
-
+    // Plugin display name — kept byte-identical to the pre-refactor EditBuilder.
+    juce::String name;
     switch (backend)
     {
         case BackendType::BNNSGraph:
-        {
-            plugin = track.edit.getPluginCache().createNewPlugin(
-                te::BNNSGraphPlugin::xmlTypeName, {});
-            if (auto* p = dynamic_cast<te::BNNSGraphPlugin*>(plugin.get()))
-            {
-                p->setModelPath(modelCoreMLPath(model, size, modelDir));
-                p->setPluginName("BNNS_" + juce::String(modelTypeName(model)));
-                track.pluginList.insertPlugin(plugin, 0, nullptr);
-                return &p->getTimingLogger();
-            }
-            break;
-        }
+            name = "BNNS_" + juce::String(modelTypeName(model)); break;
         case BackendType::RTNeural_Eigen:
         case BackendType::RTNeural_XSIMD:
-        {
-            plugin = track.edit.getPluginCache().createNewPlugin(
-                te::RTNeuralPlugin::xmlTypeName, {});
-            if (auto* p = dynamic_cast<te::RTNeuralPlugin*>(plugin.get()))
-            {
-                p->setModelConfig(model, size, modelWeightsPath(model, size, modelDir));
-                p->setPluginName("RTNeural_" + juce::String(modelTypeName(model)));
-                track.pluginList.insertPlugin(plugin, 0, nullptr);
-                return &p->getTimingLogger();
-            }
-            break;
-        }
+            name = "RTNeural_" + juce::String(modelTypeName(model)); break;
         case BackendType::Direct_LibTorch:
-        {
-            plugin = track.edit.getPluginCache().createNewPlugin(
-                te::DirectLibTorchPlugin::xmlTypeName, {});
-            if (auto* p = dynamic_cast<te::DirectLibTorchPlugin*>(plugin.get()))
-            {
-                p->setModelPath(modelTorchScriptPath(model, size, modelDir));
-                p->setPluginName("DirectLibTorch_" + juce::String(modelTypeName(model)));
-                track.pluginList.insertPlugin(plugin, 0, nullptr);
-                return &p->getTimingLogger();
-            }
-            break;
-        }
+            name = "DirectLibTorch_" + juce::String(modelTypeName(model)); break;
         case BackendType::Direct_ONNX:
-        {
-            plugin = track.edit.getPluginCache().createNewPlugin(
-                te::DirectOnnxPlugin::xmlTypeName, {});
-            if (auto* p = dynamic_cast<te::DirectOnnxPlugin*>(plugin.get()))
-            {
-                p->setModelPath(modelOnnxPath(model, size, modelDir));
-                p->setPluginName("DirectONNX_" + juce::String(modelTypeName(model)));
-                track.pluginList.insertPlugin(plugin, 0, nullptr);
-                return &p->getTimingLogger();
-            }
-            break;
-        }
+            name = "DirectONNX_" + juce::String(modelTypeName(model)); break;
         case BackendType::Anira_LibTorch:
-        {
-            plugin = track.edit.getPluginCache().createNewPlugin(
-                te::AniraLibTorchHandlerPlugin::xmlTypeName, {});
-            if (auto* p = dynamic_cast<te::AniraLibTorchHandlerPlugin*>(plugin.get()))
-            {
-                p->setModelPath(modelTorchScriptPath(model, size, modelDir));
-                p->setPluginName("AniraLibTorch_" + juce::String(modelTypeName(model)));
-                track.pluginList.insertPlugin(plugin, 0, nullptr);
-                sessionInfo.inferenceUnderrunGetters.push_back([p]() { return p->getInferenceUnderruns(); });
-                sessionInfo.inferenceUnderrunResetters.push_back([p]() { p->resetInferenceUnderruns(); });
-                return &p->getTimingLogger();
-            }
-            break;
-        }
+            name = "AniraLibTorch_" + juce::String(modelTypeName(model)); break;
         case BackendType::Anira_ONNX:
-        {
-            plugin = track.edit.getPluginCache().createNewPlugin(
-                te::AniraOnnxHandlerPlugin::xmlTypeName, {});
-            if (auto* p = dynamic_cast<te::AniraOnnxHandlerPlugin*>(plugin.get()))
-            {
-                p->setModelPath(modelOnnxPath(model, size, modelDir));
-                p->setPluginName("AniraONNX_" + juce::String(modelTypeName(model)));
-                track.pluginList.insertPlugin(plugin, 0, nullptr);
-                sessionInfo.inferenceUnderrunGetters.push_back([p]() { return p->getInferenceUnderruns(); });
-                sessionInfo.inferenceUnderrunResetters.push_back([p]() { p->resetInferenceUnderruns(); });
-                return &p->getTimingLogger();
-            }
-            break;
-        }
+            name = "AniraONNX_" + juce::String(modelTypeName(model)); break;
         default:
             break;
     }
 
-    return nullptr;
+    const ModelSpec* spec = nab::findModelSpec(specs, model, size);
+    return attachNeuralPlugin(track, backend, spec, name, sessionInfo);
 }
 
 void EditBuilder::addCallbackStart(te::AudioTrack& track, CallbackTimer* timer,

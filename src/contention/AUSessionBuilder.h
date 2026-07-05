@@ -5,6 +5,7 @@
 #include "../BenchmarkConfig.h"
 #include "../TimingLogger.h"
 #include "../plugins/ContentionPlugins.h"
+#include "../core/ModelManifest.h"   // ModelSpec, findModelSpec
 
 #include <tracktion_engine/tracktion_engine.h>
 
@@ -31,7 +32,8 @@ struct SessionTimingInfo;
 class AUSessionBuilder
 {
 public:
-    AUSessionBuilder(te::Engine& engine, const std::string& modelDir);
+    AUSessionBuilder(te::Engine& engine, const std::string& modelDir,
+                     const std::vector<ModelSpec>& specs);
     ~AUSessionBuilder();
 
     // Scan for required Apple system AUs. Returns true if all found.
@@ -55,6 +57,7 @@ public:
 private:
     te::Engine& engine;
     std::string modelDir;
+    const std::vector<ModelSpec>& specs;
 
     // Plugin descriptions for each AU type, keyed by AU name
     std::map<std::string, juce::PluginDescription> auMap;

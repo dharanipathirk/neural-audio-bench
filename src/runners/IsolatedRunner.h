@@ -4,11 +4,11 @@
 
 #include "../BenchmarkConfig.h"
 #include "../TimingLogger.h"
-#include "../plugins/BNNSGraphPlugin.h"
-#include "../plugins/RTNeuralPlugin.h"
-#include "../plugins/AniraPlugin.h"
+#include "../backends/InferenceBackend.h"
+#include "../core/ModelManifest.h"
 
 #include <cstdio>
+#include <functional>
 #include <random>
 #include <string>
 #include <vector>
@@ -18,17 +18,17 @@
 // Mode A: raw throughput (process N seconds of audio, measure wall-clock)
 // Mode B: simulated DAW callbacks (per-buffer timing, stats)
 // ---------------------------------------------------------------------------
-class IsolatedBenchmark
+class IsolatedRunner
 {
 public:
-    IsolatedBenchmark(const std::string& modelDir, const std::string& configPath)
-        : modelDir(modelDir), configPath(configPath) {}
+    IsolatedRunner(const std::string& configPath, const std::vector<ModelSpec>& specs)
+        : configPath(configPath), specs(specs) {}
 
     void runAll(FILE* csvFile);
 
 private:
-    std::string modelDir;
     std::string configPath;
+    const std::vector<ModelSpec>& specs;
 
     // Generate deterministic random signal
     std::vector<float> generateSignal(size_t numSamples, uint32_t seed = 42);
@@ -46,5 +46,5 @@ private:
 
     // Run all backends for a given model+size combination
     void benchmarkModel(FILE* csvFile, ModelType model, ModelSize size,
-                        const BenchmarkRuntimeConfig& cfg);
+                        const ModelSpec& spec, const BenchmarkRuntimeConfig& cfg);
 };

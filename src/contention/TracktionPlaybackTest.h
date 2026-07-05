@@ -4,9 +4,8 @@
 
 #include "../BenchmarkConfig.h"
 #include "../TimingLogger.h"
-#include "../plugins/BNNSGraphPlugin.h"
-#include "../plugins/RTNeuralPlugin.h"
-#include "../plugins/AniraPlugin.h"
+#include "../host/NeuralInferencePlugin.h"
+#include "../backends/BackendRegistry.h"
 #include "../plugins/ContentionPlugins.h"
 
 #include <tracktion_engine/tracktion_engine.h>

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Dharanipathi Rathna Kumar Balasubramaniam
-#include "IsolatedBenchmark.h"
+#include "IsolatedRunner.h"
+#include "../backends/BackendRegistry.h"
 
-std::vector<float> IsolatedBenchmark::generateSignal(size_t numSamples, uint32_t seed)
+std::vector<float> IsolatedRunner::generateSignal(size_t numSamples, uint32_t seed)
 {
     std::vector<float> signal(numSamples);
     std::mt19937 gen(seed);
@@ -12,9 +13,9 @@ std::vector<float> IsolatedBenchmark::generateSignal(size_t numSamples, uint32_t
     return signal;
 }
 
-void IsolatedBenchmark::runModeA(FILE* csvFile, const char* backend, ModelType model, ModelSize size,
-                                  std::function<void(const float*, float*, int)> processBlock,
-                                  const BenchmarkRuntimeConfig& cfg)
+void IsolatedRunner::runModeA(FILE* csvFile, const char* backend, ModelType model, ModelSize size,
+                              std::function<void(const float*, float*, int)> processBlock,
+                              const BenchmarkRuntimeConfig& cfg)
 {
     double throughputSeconds = cfg.isolatedThroughputSeconds;
     const size_t totalSamples = static_cast<size_t>(cfg.sampleRate * throughputSeconds);
@@ -49,10 +50,10 @@ void IsolatedBenchmark::runModeA(FILE* csvFile, const char* backend, ModelType m
                                  0, 1, ts);
 }
 
-void IsolatedBenchmark::runModeB(FILE* csvFile, const char* backend, ModelType model, ModelSize size,
-                                  std::function<void(const float*, float*, int)> processBlock,
-                                  std::function<void()> resetFn,
-                                  const BenchmarkRuntimeConfig& cfg)
+void IsolatedRunner::runModeB(FILE* csvFile, const char* backend, ModelType model, ModelSize size,
+                              std::function<void(const float*, float*, int)> processBlock,
+                              std::function<void()> resetFn,
+                              const BenchmarkRuntimeConfig& cfg)
 {
     TimingUtils::init();
 
@@ -128,82 +129,55 @@ void IsolatedBenchmark::runModeB(FILE* csvFile, const char* backend, ModelType m
     }
 }
 
-void IsolatedBenchmark::benchmarkModel(FILE* csvFile, ModelType model, ModelSize size,
-                                        const BenchmarkRuntimeConfig& cfg)
+void IsolatedRunner::benchmarkModel(FILE* csvFile, ModelType model, ModelSize size,
+                                    const ModelSpec& spec, const BenchmarkRuntimeConfig& cfg)
 {
     fprintf(stderr, "\n--- %s / %s ---\n", modelTypeName(model), modelSizeName(size));
 
-    // 1. BNNSGraph
-    if (cfg.isBackendEnabled(BackendType::BNNSGraph))
+    auto& reg = BackendRegistry::instance();
+
+    // Iterate backends in registration order (BNNSGraph, RTNeural_(variant),
+    // Direct_LibTorch, Direct_ONNX, Anira_LibTorch, Anira_ONNX) so the CSV row
+    // order matches the pre-refactor benchmark. Anira backends are skipped in
+    // isolated mode (supportsIsolated() == false).
+    for (const auto& backendName : reg.names())
     {
-        BNNSGraphEngine engine;
-        std::string path = modelCoreMLPath(model, size, modelDir);
-        if (engine.initialize(path))
+        BackendType bt;
+        if (!backendTypeFromName(backendName, bt))
+            continue;
+        if (!cfg.isBackendEnabled(bt))
+            continue;
+
+        auto backend = reg.create(backendName);
+        if (!backend)
+            continue;
+        if (!backend->supportsIsolated())
+            continue;
+
+        std::string whyNot;
+        if (!backend->supports(spec, whyNot))
         {
-            auto proc = [&](const float* in, float* out, int n) { engine.processBlock(in, out, n); };
-            auto reset = [&]() { engine.resetState(); };
-
-            runModeA(csvFile, "BNNSGraph", model, size, proc, cfg);
-            runModeB(csvFile, "BNNSGraph", model, size, proc, reset, cfg);
+            fprintf(stderr, "  SKIP %s: %s\n", backendName.c_str(), whyNot.c_str());
+            continue;
         }
-    }
 
-    // 2. RTNeural (Eigen or XSIMD, selected at compile time)
-    {
-#if defined(RTNEURAL_USE_XSIMD)
-        const auto rtneuralBackendType = BackendType::RTNeural_XSIMD;
-        const char* rtneuralBackend = "RTNeural_XSIMD";
-#else
-        const auto rtneuralBackendType = BackendType::RTNeural_Eigen;
-        const char* rtneuralBackend = "RTNeural_Eigen";
-#endif
-        if (cfg.isBackendEnabled(rtneuralBackendType))
+        PrepareContext pc{ cfg.sampleRate, 0, &spec };
+        if (!backend->prepare(pc))
         {
-            RTNeuralEngine engine;
-            std::string weights = modelWeightsPath(model, size, modelDir);
-            if (engine.initialize(model, size, weights))
-            {
-                auto proc = [&](const float* in, float* out, int n) { engine.processBlock(in, out, n); };
-                auto reset = [&]() { engine.resetState(); };
-
-                runModeA(csvFile, rtneuralBackend, model, size, proc, cfg);
-                runModeB(csvFile, rtneuralBackend, model, size, proc, reset, cfg);
-            }
+            fprintf(stderr, "  SKIP %s: prepare failed for %s/%s\n",
+                    backendName.c_str(), modelTypeName(model), modelSizeName(size));
+            continue;
         }
-    }
 
-    // 3. LibTorch (direct, no anira scheduling)
-    if (cfg.isBackendEnabled(BackendType::Direct_LibTorch))
-    {
-        LibTorchEngine engine;
-        std::string path = modelTorchScriptPath(model, size, modelDir);
-        if (engine.initialize(path))
-        {
-            auto proc = [&](const float* in, float* out, int n) { engine.processBlock(in, out, n); };
-            auto reset = [&]() { engine.resetState(); };
+        auto proc = [&](const float* in, float* out, int n) { backend->process(in, out, n); };
+        auto reset = [&]() { backend->reset(); };
 
-            runModeA(csvFile, "Direct_LibTorch", model, size, proc, cfg);
-            runModeB(csvFile, "Direct_LibTorch", model, size, proc, reset, cfg);
-        }
-    }
-
-    // 4. ONNX Runtime (direct, no anira scheduling)
-    if (cfg.isBackendEnabled(BackendType::Direct_ONNX))
-    {
-        OnnxRuntimeEngine engine;
-        std::string path = modelOnnxPath(model, size, modelDir);
-        if (engine.initialize(path))
-        {
-            auto proc = [&](const float* in, float* out, int n) { engine.processBlock(in, out, n); };
-            auto reset = [&]() { engine.resetState(); };
-
-            runModeA(csvFile, "Direct_ONNX", model, size, proc, cfg);
-            runModeB(csvFile, "Direct_ONNX", model, size, proc, reset, cfg);
-        }
+        runModeA(csvFile, backend->name(), model, size, proc, cfg);
+        runModeB(csvFile, backend->name(), model, size, proc, reset, cfg);
     }
 }
 
-void IsolatedBenchmark::runAll(FILE* csvFile)
+void IsolatedRunner::runAll(FILE* csvFile)
 {
     fprintf(stderr, "\n========================================\n");
     fprintf(stderr, "Isolated Benchmark\n");
@@ -222,7 +196,16 @@ void IsolatedBenchmark::runAll(FILE* csvFile)
         {
             auto model = static_cast<ModelType>(mi);
             if (!cfg.isModelEnabled(model)) continue;
-            benchmarkModel(csvFile, model, size, cfg);
+
+            const ModelSpec* spec = nab::findModelSpec(specs, model, size);
+            if (!spec)
+            {
+                fprintf(stderr, "  SKIP %s/%s: no model spec available\n",
+                        modelTypeName(model), modelSizeName(size));
+                continue;
+            }
+
+            benchmarkModel(csvFile, model, size, *spec, cfg);
         }
     }
 

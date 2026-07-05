@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Dharanipathi Rathna Kumar Balasubramaniam
-#include "BNNSGraphPlugin.h"
-#include "../BenchmarkConfig.h"
+#include "BnnsGraphBackend.h"
 #import <Foundation/Foundation.h>
 
 // ---------------------------------------------------------------------------
@@ -236,61 +235,15 @@ void BNNSGraphEngine::resetState()
 }
 
 // ---------------------------------------------------------------------------
-// BNNSGraphPlugin (Tracktion Engine plugin)
+// BnnsGraphBackend adapter
 // ---------------------------------------------------------------------------
 
-namespace tracktion { namespace engine {
-
-const char* BNNSGraphPlugin::xmlTypeName = "bnnsGraphPlugin";
-
-BNNSGraphPlugin::BNNSGraphPlugin(PluginCreationInfo info)
-    : Plugin(info)
+bool BnnsGraphBackend::prepare(const PrepareContext& ctx)
 {
+    if (ctx.model == nullptr)
+        return false;
+    auto it = ctx.model->formatPaths.find("coreml");
+    if (it == ctx.model->formatPaths.end())
+        return false;
+    return engine.initialize(it->second);
 }
-
-BNNSGraphPlugin::~BNNSGraphPlugin()
-{
-    deinitialise();
-}
-
-void BNNSGraphPlugin::initialise(const PluginInitialisationInfo& info)
-{
-    fprintf(stderr, "    BNNSGraphPlugin::initialise called! sr=%.0f bs=%d model=%s\n",
-            info.sampleRate, info.blockSizeSamples, modelPath.c_str());
-
-    if (!modelPath.empty() && !engine.isValid())
-        engine.initialize(modelPath);
-
-    timingLogger.allocate(static_cast<int>(SAMPLE_RATE * 30.0 / 32.0));
-}
-
-void BNNSGraphPlugin::deinitialise()
-{
-    engine.deinitialize();
-}
-
-void BNNSGraphPlugin::applyToBuffer(const PluginRenderContext& ctx)
-{
-    if (ctx.destBuffer == nullptr || !engine.isValid())
-        return;
-
-    auto* buffer = ctx.destBuffer;
-    const int numSamples = ctx.bufferNumSamples;
-    const int startSample = ctx.bufferStartSample;
-
-    timingLogger.recordStart();
-
-    // In-place: read from buffer, process, write back
-    // Need a temp output since processBlock writes to a separate output buffer
-    auto* data = buffer->getWritePointer(0);
-    engine.processBlock(data + startSample, data + startSample, numSamples);
-
-    timingLogger.recordEnd();
-}
-
-void BNNSGraphPlugin::reset()
-{
-    engine.resetState();
-}
-
-}} // namespace tracktion::engine

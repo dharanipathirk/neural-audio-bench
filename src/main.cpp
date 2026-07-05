@@ -20,7 +20,9 @@
 
 #include "BenchmarkConfig.h"
 #include "TimingLogger.h"
-#include "isolated/IsolatedBenchmark.h"
+#include "backends/BackendRegistry.h"
+#include "core/ModelManifest.h"
+#include "runners/IsolatedRunner.h"
 #include "contention/EditBuilder.h"
 #include "contention/TracktionPlaybackTest.h"
 
@@ -124,6 +126,16 @@ int main(int argc, char* argv[])
 
     TimingUtils::init();
 
+    // Register the compile-available inference backends (fixed order preserves
+    // benchmark execution order / CSV row order).
+    nab::registerBuiltinBackends();
+
+    // Resolve the model catalog once. Uses the manifest referenced by the
+    // config (path relative to the config file) if present, else falls back to
+    // the legacy models/{arch}/{size} directory layout.
+    const std::vector<ModelSpec> modelSpecs =
+        nab::ModelManifest::resolve(configPath, modelDir, globalCfg);
+
     if (mode == "isolated" || mode == "all")
     {
         std::string isoPath = outputPath.empty()
@@ -139,7 +151,7 @@ int main(int argc, char* argv[])
             return 1;
         }
 
-        IsolatedBenchmark iso(modelDir, configPath);
+        IsolatedRunner iso(configPath, modelSpecs);
         iso.runAll(csvFile);
 
         fclose(csvFile);
@@ -228,7 +240,7 @@ int main(int argc, char* argv[])
             return 1;
         }
 
-        ContentionBenchmark contention(engine, modelDir, configPath);
+        ContentionBenchmark contention(engine, modelDir, configPath, modelSpecs);
         contention.runAll(csvFile);
 
         fclose(csvFile);

@@ -2,8 +2,7 @@
 // Copyright (C) 2026 Dharanipathi Rathna Kumar Balasubramaniam
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
-#include "../TimingLogger.h"
+#include "InferenceBackend.h"
 #include "../BenchmarkConfig.h"
 
 // RTNeural backend is selected via CMake compile definitions:
@@ -582,48 +581,28 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// Tracktion Engine plugin wrapping RTNeuralEngine
+// RTNeural backend adapter. name() reflects the compile-time backend
+// (RTNeural_XSIMD under RTNEURAL_USE_XSIMD, else RTNeural_Eigen).
 // ---------------------------------------------------------------------------
-namespace tracktion { namespace engine {
-
-class RTNeuralPlugin : public Plugin
+class RTNeuralBackend : public InferenceBackend
 {
 public:
-    RTNeuralPlugin(PluginCreationInfo info);
-    ~RTNeuralPlugin() override = default;
+#if defined(RTNEURAL_USE_XSIMD)
+    static constexpr const char* kName = "RTNeural_XSIMD";
+#else
+    static constexpr const char* kName = "RTNeural_Eigen";
+#endif
 
-    static const char* xmlTypeName;
+    bool prepare(const PrepareContext& ctx) override;
+    void process(const float* in, float* out, int n) noexcept override { engine.processBlock(in, out, n); }
+    void reset() noexcept override { engine.resetState(); }
 
-    juce::String getName() const override { return pluginName; }
-    juce::String getSelectableDescription() override { return getName(); }
-    juce::String getPluginType() override { return xmlTypeName; }
-
-    void initialise(const PluginInitialisationInfo& info) override;
-    void deinitialise() override {}
-    void applyToBuffer(const PluginRenderContext& ctx) override;
-    void reset() override;
-
-    int getNumOutputChannelsGivenInputs(int numInputs) override { return juce::jmin(numInputs, 1); }
-    bool takesAudioInput() override { return true; }
-    bool isSynth() override { return false; }
-
-    void setModelConfig(ModelType model, ModelSize size, const std::string& weightsPath)
-    {
-        modelType = model;
-        modelSize = size;
-        this->weightsPath = weightsPath;
-    }
-    void setPluginName(const juce::String& name) { pluginName = name; }
-
-    TimingLogger& getTimingLogger() { return timingLogger; }
+    const char* name() const override { return kName; }
+    bool isRealtimeSafe() const override { return true; }
+    const char* requiredFormat() const override { return "rtneural"; }
+    bool supports(const ModelSpec& spec, std::string& whyNot) const override;
 
 private:
     RTNeuralEngine engine;
-    ModelType modelType = ModelType::LSTM;
-    ModelSize modelSize = ModelSize::Small;
-    std::string weightsPath;
-    juce::String pluginName{"RTNeural"};
-    TimingLogger timingLogger;
+    static bool mapArchSize(const ModelSpec& spec, ModelType& m, ModelSize& s);
 };
-
-}} // namespace tracktion::engine

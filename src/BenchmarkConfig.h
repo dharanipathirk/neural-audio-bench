@@ -89,6 +89,22 @@ inline const char* backendTypeName(BackendType b)
     }
 }
 
+// Reverse of backendTypeName: map a backend CSV name back to its enum.
+// Returns false if the name is not a known backend.
+inline bool backendTypeFromName(const std::string& name, BackendType& out)
+{
+    for (int bi = 0; bi < static_cast<int>(BackendType::COUNT); bi++)
+    {
+        auto b = static_cast<BackendType>(bi);
+        if (name == backendTypeName(b))
+        {
+            out = b;
+            return true;
+        }
+    }
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // Model file paths — include size tier in directory structure
 // Structure: models/{arch}/{size}/stateful_{arch}_{size}.{ext}

@@ -6,6 +6,7 @@
 #include "../TimingLogger.h"
 
 #include "../plugins/ContentionPlugins.h"
+#include "../core/ModelManifest.h"   // ModelSpec, findModelSpec
 #include "AUSessionBuilder.h"
 
 #include <tracktion_engine/tracktion_engine.h>
@@ -47,12 +48,24 @@ struct SessionTimingInfo
 };
 
 // ---------------------------------------------------------------------------
+// Shared helper used by both EditBuilder and AUSessionBuilder: create the
+// unified NeuralInferencePlugin on a track, wire it to a registry backend and
+// the given model spec, and register its underrun getter/resetter. Returns the
+// plugin's neural TimingLogger (nullptr if the spec/backend is unavailable).
+// The plugin is inserted at position 0 (front of the track).
+// ---------------------------------------------------------------------------
+TimingLogger* attachNeuralPlugin(te::AudioTrack& track, BackendType backend,
+                                 const ModelSpec* spec, const juce::String& pluginName,
+                                 SessionTimingInfo& sessionInfo);
+
+// ---------------------------------------------------------------------------
 // Builds Tracktion Engine Edits for contention benchmarking.
 // ---------------------------------------------------------------------------
 class EditBuilder
 {
 public:
-    EditBuilder(te::Engine& engine, const std::string& modelDir);
+    EditBuilder(te::Engine& engine, const std::string& modelDir,
+                const std::vector<ModelSpec>& specs);
     ~EditBuilder();
 
     SessionTimingInfo buildDimensionA(
@@ -86,6 +99,7 @@ public:
 private:
     te::Engine& engine;
     std::string modelDir;
+    const std::vector<ModelSpec>& specs;
 
     juce::File noiseWavFile;
     void ensureNoiseWavFile(double durationSeconds, double sampleRate);
@@ -112,8 +126,9 @@ private:
 class ContentionBenchmark
 {
 public:
-    ContentionBenchmark(te::Engine& engine, const std::string& modelDir, const std::string& configPath)
-        : builder(engine, modelDir), auBuilder(engine, modelDir),
+    ContentionBenchmark(te::Engine& engine, const std::string& modelDir, const std::string& configPath,
+                        const std::vector<ModelSpec>& specs)
+        : builder(engine, modelDir, specs), auBuilder(engine, modelDir, specs),
           engine(engine), modelDir(modelDir), configPath(configPath) {}
 
     void runDimensionA(FILE* csvFile);

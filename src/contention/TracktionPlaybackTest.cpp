@@ -40,10 +40,7 @@ void TracktionPlaybackTest::registerPluginTypes()
     if (pluginsRegistered) return;
 
     auto& pm = engine.getPluginManager();
-    pm.createBuiltInType<te::BNNSGraphPlugin>();
-    pm.createBuiltInType<te::RTNeuralPlugin>();
-    pm.createBuiltInType<te::DirectLibTorchPlugin>();
-    pm.createBuiltInType<te::DirectOnnxPlugin>();
+    pm.createBuiltInType<te::NeuralInferencePlugin>();
     pm.createBuiltInType<te::ContentionEQPlugin>();
     pm.createBuiltInType<te::ContentionCompPlugin>();
     pm.createBuiltInType<te::ContentionReverbPlugin>();
@@ -125,10 +122,16 @@ bool TracktionPlaybackTest::run()
     {
         auto* track = tracks[0];
         track->insertWaveClip("Noise", noiseFile, { { {}, clipDuration } }, false);
-        auto plugin = edit->getPluginCache().createNewPlugin(BNNSGraphPlugin::xmlTypeName, {});
-        if (auto* p = dynamic_cast<BNNSGraphPlugin*>(plugin.get()))
+        auto plugin = edit->getPluginCache().createNewPlugin(NeuralInferencePlugin::xmlTypeName, {});
+        if (auto* p = dynamic_cast<NeuralInferencePlugin*>(plugin.get()))
         {
-            p->setModelPath(modelCoreMLPath(ModelType::LSTM, ModelSize::Small, modelDir));
+            ModelSpec s;
+            s.id = "lstm_small";
+            s.arch = "lstm";
+            s.size = "small";
+            s.formatPaths["coreml"] = modelCoreMLPath(ModelType::LSTM, ModelSize::Small, modelDir);
+            p->setBackend(BackendRegistry::instance().create("BNNSGraph"));
+            p->setModelSpec(s);
             p->setPluginName("Test_BNNS_LSTM");
             track->pluginList.insertPlugin(plugin, 0, nullptr);
             neuralLogger = &p->getTimingLogger();

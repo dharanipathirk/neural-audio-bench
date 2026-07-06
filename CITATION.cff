@@ -1,0 +1,38 @@
+cff-version: 1.2.0
+message: >-
+  If you use neural-audio-bench in your research, please cite both the
+  software and the DAFx-26 paper below.
+title: neural-audio-bench
+type: software
+authors:
+  - family-names: Rathna Kumar Balasubramaniam
+    given-names: Dharanipathi
+    email: dharanipathirk@gmail.com
+    affiliation: Maynooth University
+license: GPL-3.0-or-later
+repository-code: https://github.com/dharanipathirk/neural-audio-bench
+version: 1.0.0
+date-released: 2026-07-05
+keywords:
+  - neural-audio
+  - real-time
+  - benchmark
+  - apple-silicon
+  - audio-plugins
+  - machine-learning-inference
+preferred-citation:
+  type: conference-paper
+  title: >-
+    Real-Time Neural Audio on Apple Silicon: Benchmarking Inference
+    Frameworks Under Realistic DAW Contention
+  authors:
+    - family-names: Rathna Kumar Balasubramaniam
+      given-names: Dharanipathi
+      affiliation: Maynooth University
+    - family-names: Timoney
+      given-names: Joseph
+      affiliation: Maynooth University
+  collection-title: >-
+    Proceedings of the 29th International Conference on Digital Audio
+    Effects (DAFx-26)
+  year: 2026

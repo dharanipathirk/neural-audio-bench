@@ -1,0 +1,5 @@
+{
+  "_comment": "Test fixture: missing every required section except sample_rate. The loader must reject this (fail-fast, no compiled-in defaults).",
+  "schema_version": 1,
+  "sample_rate": 48000
+}

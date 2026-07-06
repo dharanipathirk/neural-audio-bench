@@ -797,9 +797,16 @@ AMX_PALETTE = {
 
 
 def _load_amx_results(script_file: Path) -> list[dict]:
-    amx_dir = script_file.parent / "amx_results"
+    # AMX scan output lands in microarch/amx_results (see
+    # microarch/run_amx_analysis.sh); these figures are optional and skipped
+    # when no scan has been run.
+    from neural_audio_bench.config import repo_root
+
+    amx_dir = repo_root() / "microarch" / "amx_results"
     if not amx_dir.exists():
-        print(f"  AMX: directory not found ({amx_dir}) — skipping")
+        print(
+            f"  AMX: directory not found ({amx_dir}) — skipping (optional; run microarch/run_amx_analysis.sh to generate)"
+        )
         return []
     json_files = sorted(amx_dir.glob("*.json"))
     if not json_files:

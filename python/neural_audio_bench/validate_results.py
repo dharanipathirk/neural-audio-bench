@@ -15,18 +15,53 @@ import sys
 from pathlib import Path
 
 ISOLATED_COLUMNS = [
-    "mode", "backend", "model", "model_size", "buffer_size", "rep",
-    "median_ns", "mean_ns", "p95_ns", "p99_ns", "p999_ns", "min_ns",
-    "max_ns", "stddev_ns", "rtf", "dropouts", "total_samples",
+    "mode",
+    "backend",
+    "model",
+    "model_size",
+    "buffer_size",
+    "rep",
+    "median_ns",
+    "mean_ns",
+    "p95_ns",
+    "p99_ns",
+    "p999_ns",
+    "min_ns",
+    "max_ns",
+    "stddev_ns",
+    "rtf",
+    "dropouts",
+    "total_samples",
 ]
 
 CONTENTION_COLUMNS = [
-    "dimension", "backend", "model", "model_size", "buffer_size",
-    "contention_level", "instance_count", "rep",
-    "median_ns", "mean_ns", "p95_ns", "p99_ns", "p999_ns", "min_ns",
-    "max_ns", "stddev_ns", "rtf", "dropouts", "total_samples",
-    "util_p50", "util_p95", "util_p99", "util_p999", "util_max",
-    "hw_xruns", "inf_underruns", "thread_count",
+    "dimension",
+    "backend",
+    "model",
+    "model_size",
+    "buffer_size",
+    "contention_level",
+    "instance_count",
+    "rep",
+    "median_ns",
+    "mean_ns",
+    "p95_ns",
+    "p99_ns",
+    "p999_ns",
+    "min_ns",
+    "max_ns",
+    "stddev_ns",
+    "rtf",
+    "dropouts",
+    "total_samples",
+    "util_p50",
+    "util_p95",
+    "util_p99",
+    "util_p999",
+    "util_max",
+    "hw_xruns",
+    "inf_underruns",
+    "thread_count",
 ]
 
 # Columns added by results-schema v2 (status rows + versioning); accepted
@@ -49,7 +84,7 @@ def validate_csv(path: str | Path) -> list[str]:
             return [f"{path}: empty file"]
         rows = list(reader)
 
-    base = header[len(V2_PREFIX):] if header[: len(V2_PREFIX)] == V2_PREFIX else header
+    base = header[len(V2_PREFIX) :] if header[: len(V2_PREFIX)] == V2_PREFIX else header
 
     if base == ISOLATED_COLUMNS:
         kind = "isolated"

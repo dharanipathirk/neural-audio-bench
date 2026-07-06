@@ -14,9 +14,16 @@ import numpy as np
 import pandas as pd
 
 
+def _drop_non_ok(df: pd.DataFrame) -> pd.DataFrame:
+    """Drop skipped/error rows (results schema v2). v1 CSVs have no status column."""
+    if "status" in df.columns:
+        return df[df["status"] == "ok"].copy()
+    return df
+
+
 def load_isolated(path: str) -> pd.DataFrame:
     """Load and enrich isolated benchmark CSV."""
-    df = pd.read_csv(path)
+    df = _drop_non_ok(pd.read_csv(path))
 
     # Backward-compatible model_size column
     if "model_size" not in df.columns:
@@ -40,7 +47,7 @@ def load_contention(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
         NOT end in '_cb', and df_cb contains rows whose dimension ends in '_cb'.
         Both DataFrames have a 'row_type' column ('neural' or 'callback').
     """
-    df = pd.read_csv(path)
+    df = _drop_non_ok(pd.read_csv(path))
 
     # Ensure correct dtypes for integer columns
     for col in ["hw_xruns", "inf_underruns", "thread_count"]:

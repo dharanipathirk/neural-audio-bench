@@ -23,18 +23,28 @@ def test_validate_results_rejects_garbage(tmp_path):
 
 def test_analyze_reproduces_paper_headline_numbers(tmp_path):
     out = tmp_path / "analysis.csv"
-    analyze.main([
-        "--isolated", str(EXPECTED / "isolated.csv"),
-        "--contention", str(EXPECTED / "contention.csv"),
-        "--output", str(out),
-    ])
+    analyze.main(
+        [
+            "--isolated",
+            str(EXPECTED / "isolated.csv"),
+            "--contention",
+            str(EXPECTED / "contention.csv"),
+            "--output",
+            str(out),
+        ]
+    )
     iso = tmp_path / "analysis_isolated.csv"
     assert iso.exists()
     # Paper Table 4: BNNSGraph LSTM-Large RTF 0.053 at buffer 128.
     with open(iso) as f:
-        rows = [r for r in csv.DictReader(f)
-                if r["backend"] == "BNNSGraph" and r["model"] == "LSTM"
-                and r["model_size"] == "large" and r["buffer_size"] == "128"
-                and r["mode"] == "callback"]
+        rows = [
+            r
+            for r in csv.DictReader(f)
+            if r["backend"] == "BNNSGraph"
+            and r["model"] == "LSTM"
+            and r["model_size"] == "large"
+            and r["buffer_size"] == "128"
+            and r["mode"] == "callback"
+        ]
     assert rows, "expected BNNSGraph LSTM large @128 row in enriched output"
     assert abs(float(rows[0]["rtf"]) - 0.0533) < 0.001

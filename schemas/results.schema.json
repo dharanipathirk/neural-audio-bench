@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dharanipathirk/neural-audio-bench/schemas/results.schema.json",
+  "title": "neural-audio-bench results (CSV column specification)",
+  "description": "Machine-readable specification of the result CSV columns (schema_version 2). CSVs are the primary result format; this document defines column order, types, and semantics for validators. See docs/results-schema.md for prose. v1 files (the paper's archived CSVs) lack the first three columns.",
+  "type": "object",
+  "properties": {
+    "schema_version": { "const": 2 },
+    "isolated_columns": {
+      "const": [
+        "schema_version", "status", "error_msg",
+        "mode", "backend", "model", "model_size", "buffer_size", "rep",
+        "median_ns", "mean_ns", "p95_ns", "p99_ns", "p999_ns",
+        "min_ns", "max_ns", "stddev_ns", "rtf", "dropouts", "total_samples"
+      ]
+    },
+    "contention_columns": {
+      "const": [
+        "schema_version", "status", "error_msg",
+        "dimension", "backend", "model", "model_size", "buffer_size",
+        "contention_level", "instance_count", "rep",
+        "median_ns", "mean_ns", "p95_ns", "p99_ns", "p999_ns",
+        "min_ns", "max_ns", "stddev_ns", "rtf", "dropouts", "total_samples",
+        "util_p50", "util_p95", "util_p99", "util_p999", "util_max",
+        "hw_xruns", "inf_underruns", "thread_count"
+      ]
+    },
+    "column_semantics": {
+      "const": {
+        "status": "ok | skipped | error — non-ok rows document why a combination produced no measurement; their numeric fields are zeros and must be ignored",
+        "error_msg": "reason when status != ok (comma-free)",
+        "mode": "isolated only: throughput | callback ('-' on status rows)",
+        "dimension": "contention only: scenario id (dim_a/dim_b/dim_c/custom); '_cb' suffix = full-callback row for the same configuration",
+        "median_ns": "interpolated median of per-iteration (isolated) / per-callback (contention) wall-clock duration",
+        "p95_ns/p99_ns/p999_ns": "nearest-rank percentiles",
+        "stddev_ns": "sample standard deviation (Bessel)",
+        "rtf": "median duration / buffer deadline",
+        "dropouts": "iterations/callbacks strictly exceeding the deadline",
+        "util_*": "contention only: (duration/deadline)*100 percentiles",
+        "hw_xruns": "Core Audio overload count delta across the measurement window",
+        "inf_underruns": "anira backends: callbacks where background inference output was not ready (summed over instances)",
+        "thread_count": "unique audio threads observed"
+      }
+    }
+  }
+}

@@ -158,6 +158,9 @@ void IsolatedRunner::benchmarkModel(FILE* csvFile, ModelType model, ModelSize si
         if (!backend->supports(spec, whyNot))
         {
             fprintf(stderr, "  SKIP %s: %s\n", backendName.c_str(), whyNot.c_str());
+            CSVOutput::printIsolatedStatusRow(csvFile, "skipped", whyNot,
+                                              backendName.c_str(), modelTypeName(model),
+                                              modelSizeName(size));
             continue;
         }
 
@@ -166,6 +169,9 @@ void IsolatedRunner::benchmarkModel(FILE* csvFile, ModelType model, ModelSize si
         {
             fprintf(stderr, "  SKIP %s: prepare failed for %s/%s\n",
                     backendName.c_str(), modelTypeName(model), modelSizeName(size));
+            CSVOutput::printIsolatedStatusRow(csvFile, "error", "prepare failed",
+                                              backendName.c_str(), modelTypeName(model),
+                                              modelSizeName(size));
             continue;
         }
 

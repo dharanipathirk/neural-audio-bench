@@ -276,12 +276,32 @@ private:
 
 // ---------------------------------------------------------------------------
 // CSV output helpers
+//
+// Results schema v2: every row starts with schema_version,status,error_msg.
+// status is "ok" for measured rows; "skipped"/"error" rows document why a
+// backend x model combination produced no measurement (never a silent hole).
+// Timing fields on non-ok rows are zeros and must be ignored by consumers
+// (filter on status == "ok"). Documented in docs/results-schema.md and
+// schemas/results.schema.json.
 // ---------------------------------------------------------------------------
 namespace CSVOutput
 {
+    constexpr int kSchemaVersion = 2;
+
+    // Reasons land in a CSV field: strip the delimiters.
+    inline std::string csvSafe(const std::string& msg)
+    {
+        std::string out = msg;
+        for (auto& c : out)
+            if (c == ',' || c == '"' || c == '\n')
+                c = ';';
+        return out;
+    }
+
     inline void printIsolatedHeader(FILE* f = stdout)
     {
-        fprintf(f, "mode,backend,model,model_size,buffer_size,rep,median_ns,mean_ns,p95_ns,p99_ns,"
+        fprintf(f, "schema_version,status,error_msg,"
+                   "mode,backend,model,model_size,buffer_size,rep,median_ns,mean_ns,p95_ns,p99_ns,"
                    "p999_ns,min_ns,max_ns,stddev_ns,rtf,dropouts,total_samples\n");
     }
 
@@ -290,15 +310,24 @@ namespace CSVOutput
                                   int bufSize, int rep,
                                   const TimingStats& s)
     {
-        fprintf(f, "%s,%s,%s,%s,%d,%d,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.1f,%.6f,%d,%d\n",
-                mode, backend, model, modelSize, bufSize, rep,
+        fprintf(f, "%d,ok,,%s,%s,%s,%s,%d,%d,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.1f,%.6f,%d,%d\n",
+                kSchemaVersion, mode, backend, model, modelSize, bufSize, rep,
                 s.median_ns, s.mean_ns, s.p95_ns, s.p99_ns, s.p999_ns,
                 s.min_ns, s.max_ns, s.stddev_ns, s.rtf, s.dropout_count, s.total_samples);
     }
 
+    inline void printIsolatedStatusRow(FILE* f, const char* status, const std::string& reason,
+                                        const char* backend, const char* model,
+                                        const char* modelSize)
+    {
+        fprintf(f, "%d,%s,%s,-,%s,%s,%s,0,0,0,0,0,0,0,0,0,0.0,0.000000,0,0\n",
+                kSchemaVersion, status, csvSafe(reason).c_str(), backend, model, modelSize);
+    }
+
     inline void printContentionHeader(FILE* f = stdout)
     {
-        fprintf(f, "dimension,backend,model,model_size,buffer_size,contention_level,instance_count,"
+        fprintf(f, "schema_version,status,error_msg,"
+                   "dimension,backend,model,model_size,buffer_size,contention_level,instance_count,"
                    "rep,median_ns,mean_ns,p95_ns,p99_ns,p999_ns,min_ns,max_ns,stddev_ns,"
                    "rtf,dropouts,total_samples,"
                    "util_p50,util_p95,util_p99,util_p999,util_max,"
@@ -311,12 +340,25 @@ namespace CSVOutput
                                     int instanceCount, int rep, const TimingStats& s,
                                     int hwXruns = 0, int infUnderruns = 0, int threadCount = 0)
     {
-        fprintf(f, "%s,%s,%s,%s,%d,%d,%d,%d,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.1f,"
+        fprintf(f, "%d,ok,,%s,%s,%s,%s,%d,%d,%d,%d,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.1f,"
                    "%.6f,%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%d,%d,%d\n",
-                dimension, backend, model, modelSize, bufSize, contentionLevel, instanceCount, rep,
+                kSchemaVersion, dimension, backend, model, modelSize, bufSize, contentionLevel,
+                instanceCount, rep,
                 s.median_ns, s.mean_ns, s.p95_ns, s.p99_ns, s.p999_ns,
                 s.min_ns, s.max_ns, s.stddev_ns, s.rtf, s.dropout_count, s.total_samples,
                 s.util_p50, s.util_p95, s.util_p99, s.util_p999, s.util_max,
                 hwXruns, infUnderruns, threadCount);
+    }
+
+    inline void printContentionStatusRow(FILE* f, const char* status, const std::string& reason,
+                                          const char* dimension, const char* backend,
+                                          const char* model, const char* modelSize,
+                                          int bufSize, int contentionLevel,
+                                          int instanceCount, int rep)
+    {
+        fprintf(f, "%d,%s,%s,%s,%s,%s,%s,%d,%d,%d,%d,"
+                   "0,0,0,0,0,0,0,0.0,0.000000,0,0,0.00,0.00,0.00,0.00,0.00,0,0,0\n",
+                kSchemaVersion, status, csvSafe(reason).c_str(), dimension, backend, model,
+                modelSize, bufSize, contentionLevel, instanceCount, rep);
     }
 }

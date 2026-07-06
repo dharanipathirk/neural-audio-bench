@@ -81,6 +81,10 @@ void ContentionRunner::runSingleConfig(
         fprintf(stderr, "    SKIP: device sample rate (%.0f Hz) differs from config (%.0f Hz).\n"
                 "    Resampling would contaminate timing results.\n",
                 actualSR, cfg.sampleRate);
+        CSVOutput::printContentionStatusRow(csvFile, "error", "device sample rate differs from config",
+                                          scenario.id(), backendTypeName(backend),
+                                          modelTypeName(model), modelSizeName(size),
+                                          bufferSize, contentionLevel, instanceCount, rep);
         return;
     }
 
@@ -95,6 +99,10 @@ void ContentionRunner::runSingleConfig(
     if (!timing.neuralLogger)
     {
         fprintf(stderr, "    SKIP: failed to create neural plugin\n");
+        CSVOutput::printContentionStatusRow(csvFile, "skipped", "failed to create neural plugin",
+                                          scenario.id(), backendTypeName(backend),
+                                          modelTypeName(model), modelSizeName(size),
+                                          bufferSize, contentionLevel, instanceCount, rep);
         return;
     }
 
@@ -118,6 +126,10 @@ void ContentionRunner::runSingleConfig(
     if (!transport.isPlaying())
     {
         fprintf(stderr, "    SKIP: transport failed to start\n");
+        CSVOutput::printContentionStatusRow(csvFile, "error", "transport failed to start",
+                                          scenario.id(), backendTypeName(backend),
+                                          modelTypeName(model), modelSizeName(size),
+                                          bufferSize, contentionLevel, instanceCount, rep);
         transport.freePlaybackContext();
         return;
     }
@@ -149,6 +161,10 @@ void ContentionRunner::runSingleConfig(
     if (!transport.isPlaying())
     {
         fprintf(stderr, "    SKIP: transport failed to restart for measurement\n");
+        CSVOutput::printContentionStatusRow(csvFile, "error", "transport failed to restart for measurement",
+                                          scenario.id(), backendTypeName(backend),
+                                          modelTypeName(model), modelSizeName(size),
+                                          bufferSize, contentionLevel, instanceCount, rep);
         transport.freePlaybackContext();
         return;
     }
@@ -182,6 +198,10 @@ void ContentionRunner::runSingleConfig(
     if (neuralDurations.empty())
     {
         fprintf(stderr, "    SKIP: no timing data collected (applyToBuffer not called)\n");
+        CSVOutput::printContentionStatusRow(csvFile, "error", "no timing data collected",
+                                          scenario.id(), backendTypeName(backend),
+                                          modelTypeName(model), modelSizeName(size),
+                                          bufferSize, contentionLevel, instanceCount, rep);
         transport.freePlaybackContext();
         return;
     }

@@ -12,9 +12,15 @@ PAPER_MANIFEST = cfg.repo_root() / "experiments" / "dafx26-paper" / "models.mani
 
 # Parameter counts from paper Table 1 — the manifest is a frozen record.
 PAPER_PARAM_COUNTS = {
-    "lstm_small": 1861, "lstm_medium": 6921, "lstm_large": 38113,
-    "tcn_small": 4337, "tcn_medium": 33633, "tcn_large": 93745,
-    "wavenet_small": 841, "wavenet_medium": 10609, "wavenet_large": 41697,
+    "lstm_small": 1861,
+    "lstm_medium": 6921,
+    "lstm_large": 38113,
+    "tcn_small": 4337,
+    "tcn_medium": 33633,
+    "tcn_large": 93745,
+    "wavenet_small": 841,
+    "wavenet_medium": 10609,
+    "wavenet_large": 41697,
 }
 
 
@@ -28,7 +34,10 @@ def test_paper_manifest_validates_and_matches_table1():
 def test_manifest_missing_required_field_rejected(tmp_path):
     import jsonschema
 
-    bad = {"schema_version": 1, "models": [{"id": "x", "arch": "lstm"}]}  # no state/channels/formats
+    bad = {
+        "schema_version": 1,
+        "models": [{"id": "x", "arch": "lstm"}],
+    }  # no state/channels/formats
     p = tmp_path / "bad.json"
     p.write_text(json.dumps(bad))
     with pytest.raises(jsonschema.ValidationError):

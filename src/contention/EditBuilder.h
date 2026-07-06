@@ -7,7 +7,6 @@
 
 #include "../plugins/ContentionPlugins.h"
 #include "../core/ModelManifest.h"   // ModelSpec, findModelSpec
-#include "AUSessionBuilder.h"
 
 #include <tracktion_engine/tracktion_engine.h>
 
@@ -48,10 +47,10 @@ struct SessionTimingInfo
 };
 
 // ---------------------------------------------------------------------------
-// Shared helper used by both EditBuilder and AUSessionBuilder: create the
-// unified NeuralInferencePlugin on a track, wire it to a registry backend and
-// the given model spec, and register its underrun getter/resetter. Returns the
-// plugin's neural TimingLogger (nullptr if the spec/backend is unavailable).
+// Shared helper used by EditBuilder and the scenario session builders: create
+// the unified NeuralInferencePlugin on a track, wire it to a registry backend
+// and the given model spec, and register its underrun getter/resetter. Returns
+// the plugin's neural TimingLogger (nullptr if the spec/backend is unavailable).
 // The plugin is inserted at position 0 (front of the track).
 // ---------------------------------------------------------------------------
 TimingLogger* attachNeuralPlugin(te::AudioTrack& track, BackendType backend,
@@ -59,49 +58,19 @@ TimingLogger* attachNeuralPlugin(te::AudioTrack& track, BackendType backend,
                                  SessionTimingInfo& sessionInfo);
 
 // ---------------------------------------------------------------------------
-// Builds Tracktion Engine Edits for contention benchmarking.
+// Shared session-building toolbox for the contention scenarios. Each scenario
+// (see src/scenarios/) builds its Tracktion Engine layout by calling these
+// helpers; the helpers themselves are backend/model agnostic. Session-layout
+// logic lives in the scenarios, not here.
 // ---------------------------------------------------------------------------
 class EditBuilder
 {
 public:
-    EditBuilder(te::Engine& engine, const std::string& modelDir,
-                const std::vector<ModelSpec>& specs);
+    EditBuilder(te::Engine& engine, const std::vector<ModelSpec>& specs);
     ~EditBuilder();
 
-    SessionTimingInfo buildDimensionA(
-        te::Edit& edit,
-        BackendType backend,
-        ModelType model,
-        ModelSize size,
-        int activeTracks,
-        double sampleRate,
-        int numTracks = 36);
-
-    SessionTimingInfo buildDimensionB(
-        te::Edit& edit,
-        BackendType backend,
-        ModelType model,
-        ModelSize size,
-        int instanceCount,
-        double sampleRate);
-
-    // Dimension C: neural track serial depth.
-    // Single track with the neural plugin surrounded by a configurable chain.
-    // depth presets: "bare" (1), "channel_strip" (3), "mix_fx" (5), "heavy_chain" (7)
-    SessionTimingInfo buildDimensionC(
-        te::Edit& edit,
-        BackendType backend,
-        ModelType model,
-        ModelSize size,
-        int depth,
-        double sampleRate);
-
-private:
-    te::Engine& engine;
-    std::string modelDir;
-    const std::vector<ModelSpec>& specs;
-
-    juce::File noiseWavFile;
+    // Lazily create (once) the shared noise WAV clip source used by every
+    // scenario. Idempotent after the first call.
     void ensureNoiseWavFile(double durationSeconds, double sampleRate);
 
     void addAudioClip(te::AudioTrack& track, double durationSeconds);
@@ -116,43 +85,13 @@ private:
     // Add CallbackEndPlugin to master bus, returns its TimingLogger
     TimingLogger* addCallbackEnd(te::Edit& edit, CallbackTimer* timer);
 
+    // Register the built-in contention/neural/callback plugin types. Idempotent.
     void registerPluginTypes();
-    bool pluginsRegistered = false;
-};
-
-// ---------------------------------------------------------------------------
-// Runs the full contention benchmark suite using real-time CoreAudio playback.
-// ---------------------------------------------------------------------------
-class ContentionBenchmark
-{
-public:
-    ContentionBenchmark(te::Engine& engine, const std::string& modelDir, const std::string& configPath,
-                        const std::vector<ModelSpec>& specs)
-        : builder(engine, modelDir, specs), auBuilder(engine, modelDir, specs),
-          engine(engine), modelDir(modelDir), configPath(configPath) {}
-
-    void runDimensionA(FILE* csvFile);
-    void runDimensionB(FILE* csvFile);
-    void runDimensionC(FILE* csvFile);
-    void runAll(FILE* csvFile);
 
 private:
-    EditBuilder builder;
-    AUSessionBuilder auBuilder;
-    bool auScanned = false;
-    bool auAvailable = false;
     te::Engine& engine;
-    std::string modelDir;
-    std::string configPath;
+    const std::vector<ModelSpec>& specs;
 
-    void runSingleConfig(
-        FILE* csvFile,
-        const char* dimension,
-        BackendType backend,
-        ModelType model,
-        ModelSize size,
-        int bufferSize,
-        int contentionLevel,
-        int instanceCount,
-        int rep);
+    juce::File noiseWavFile;
+    bool pluginsRegistered = false;
 };

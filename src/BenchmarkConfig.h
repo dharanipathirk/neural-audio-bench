@@ -147,6 +147,30 @@ inline std::string modelTorchScriptPath(ModelType m, ModelSize s, const std::str
 }
 
 // ---------------------------------------------------------------------------
+// Optional data-driven contention scenario (consumed by ConfigurableScenario).
+// Lets a user define a custom track layout in JSON without writing C++. These
+// are absent from the checked-in configs, so paper behaviour is unchanged.
+// ---------------------------------------------------------------------------
+struct CustomScenarioTrackSpec
+{
+    bool countIsSweep = false;              // "count": "sweep" — the sweep value sets this group's track count
+    int count = 1;                          // fixed track count (when not sweep-driven)
+    bool neural = false;                    // this group hosts the neural plugin under test
+    std::string clip = "noise";             // audio source ("noise" is currently the only option)
+    std::vector<std::string> chain;         // plugin chain (pre-neural for a neural track)
+    std::vector<std::string> chainAfter;    // post-neural plugin chain (neural tracks only)
+};
+
+struct CustomScenarioSpec
+{
+    std::string id;                         // CSV dimension string + scenario id
+    std::string sweepParameter;             // human-readable name of the swept parameter
+    std::vector<int> sweepValues;
+    std::vector<int> bufferSizes;
+    std::vector<CustomScenarioTrackSpec> tracks;
+};
+
+// ---------------------------------------------------------------------------
 // Runtime config loaded from JSON.
 //
 // The config file is REQUIRED and must be complete: there are no compiled-in
@@ -184,6 +208,9 @@ struct BenchmarkRuntimeConfig
     // directory) and accepted virtual output device names for contention mode.
     std::string modelsManifest;
     std::vector<std::string> virtualOutputDevices = {"BlackHole"};
+
+    // Optional data-driven custom scenarios (absent in the checked-in configs).
+    std::vector<CustomScenarioSpec> customScenarios;
 
     // Which model architectures to test
     bool modelEnabled[3] = {true, true, true}; // lstm, tcn, wavenet
@@ -303,6 +330,46 @@ struct BenchmarkRuntimeConfig
                     if (!be.contains(name))
                         fail(configPath, "missing required key 'backends." + name + "'");
                     cfg.backendEnabled[bi] = be[name].get<bool>();
+                }
+            }
+
+            // Optional: data-driven custom contention scenarios. Absent in the
+            // checked-in configs; parsing here keeps the whole config in one place.
+            if (j.contains("custom_scenarios"))
+            {
+                auto& arr = j["custom_scenarios"];
+                if (!arr.is_array())
+                    fail(configPath, "'custom_scenarios' must be an array");
+                for (const auto& sc : arr)
+                {
+                    CustomScenarioSpec cs;
+                    cs.id = require(sc, "custom_scenarios", "id").get<std::string>();
+                    auto& sweep = require(sc, "custom_scenarios", "sweep");
+                    cs.sweepParameter = require(sweep, "custom_scenarios.sweep", "parameter").get<std::string>();
+                    cs.sweepValues = require(sweep, "custom_scenarios.sweep", "values").get<std::vector<int>>();
+                    cs.bufferSizes = require(sc, "custom_scenarios", "buffer_sizes").get<std::vector<int>>();
+                    for (const auto& t : require(sc, "custom_scenarios", "tracks"))
+                    {
+                        CustomScenarioTrackSpec ts;
+                        if (t.contains("count"))
+                        {
+                            if (t["count"].is_string())
+                            {
+                                if (t["count"].get<std::string>() == "sweep")
+                                    ts.countIsSweep = true;
+                                else
+                                    fail(configPath, "custom_scenarios track 'count' string must be \"sweep\"");
+                            }
+                            else
+                                ts.count = t["count"].get<int>();
+                        }
+                        if (t.contains("neural")) ts.neural = t["neural"].get<bool>();
+                        if (t.contains("clip")) ts.clip = t["clip"].get<std::string>();
+                        if (t.contains("chain")) ts.chain = t["chain"].get<std::vector<std::string>>();
+                        if (t.contains("chain_after")) ts.chainAfter = t["chain_after"].get<std::vector<std::string>>();
+                        cs.tracks.push_back(std::move(ts));
+                    }
+                    cfg.customScenarios.push_back(std::move(cs));
                 }
             }
 

@@ -23,6 +23,9 @@ FetchContent_Declare(juce
 # when no juce::juce_core target exists, and ours is added first.
 # The patch fixes a JUCE 8.0.12 API rename (userBounds -> userArea) in
 # window-positioning code that never runs in the headless benchmark.
+# TE_ADD_EXAMPLES OFF keeps Tracktion's example/test targets out of our
+# build and ctest registration.
+set(TE_ADD_EXAMPLES OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(tracktion_engine
     GIT_REPOSITORY ${NAB_TRACKTION_GIT_REPO}
     GIT_TAG        ${NAB_TRACKTION_GIT_TAG}

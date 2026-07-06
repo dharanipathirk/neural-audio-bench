@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Dharanipathi Rathna Kumar Balasubramaniam
-#include "AUSessionBuilder.h"
-#include "EditBuilder.h"  // for SessionTimingInfo + attachNeuralPlugin
+#include "SystemAuSessionBuilder.h"
+#include "../contention/EditBuilder.h"  // for SessionTimingInfo + attachNeuralPlugin
 #include "../host/NeuralInferencePlugin.h"
 
 #include <random>
 
 // ---------------------------------------------------------------------------
-// AUSessionBuilder
+// SystemAuSessionBuilder
 // ---------------------------------------------------------------------------
 
-AUSessionBuilder::AUSessionBuilder(te::Engine& engine, const std::string& modelDir,
+SystemAuSessionBuilder::SystemAuSessionBuilder(te::Engine& engine, const std::string& modelDir,
                                    const std::vector<ModelSpec>& specs)
     : engine(engine), modelDir(modelDir), specs(specs) {}
 
-AUSessionBuilder::~AUSessionBuilder()
+SystemAuSessionBuilder::~SystemAuSessionBuilder()
 {
     if (noiseWavFile.existsAsFile())
         noiseWavFile.deleteFile();
 }
 
-const std::vector<std::string>& AUSessionBuilder::requiredAUNames()
+const std::vector<std::string>& SystemAuSessionBuilder::requiredAUNames()
 {
     static const std::vector<std::string> names = {
         "AUHipass",
@@ -41,7 +41,7 @@ const std::vector<std::string>& AUSessionBuilder::requiredAUNames()
     return names;
 }
 
-bool AUSessionBuilder::scanForRequiredAUs()
+bool SystemAuSessionBuilder::scanForRequiredAUs()
 {
     if (scanned) return !auMap.empty();
 
@@ -105,7 +105,7 @@ bool AUSessionBuilder::scanForRequiredAUs()
     return auMap.size() == requiredAUNames().size();
 }
 
-void AUSessionBuilder::printAUStatus() const
+void SystemAuSessionBuilder::printAUStatus() const
 {
     fprintf(stderr, "\nSystem AU availability:\n");
     for (auto& name : requiredAUNames())
@@ -115,7 +115,7 @@ void AUSessionBuilder::printAUStatus() const
     }
 }
 
-void AUSessionBuilder::ensureNoiseWavFile(double durationSeconds, double sampleRate)
+void SystemAuSessionBuilder::ensureNoiseWavFile(double durationSeconds, double sampleRate)
 {
     if (noiseWavFile.existsAsFile())
         return;
@@ -143,7 +143,7 @@ void AUSessionBuilder::ensureNoiseWavFile(double durationSeconds, double sampleR
         writer->writeFromAudioSampleBuffer(buffer, 0, numSamples);
 }
 
-te::Plugin::Ptr AUSessionBuilder::insertAU(te::Edit& edit, te::AudioTrack& track,
+te::Plugin::Ptr SystemAuSessionBuilder::insertAU(te::Edit& edit, te::AudioTrack& track,
                                             const std::string& auName, int index)
 {
     auto it = auMap.find(auName);
@@ -157,7 +157,7 @@ te::Plugin::Ptr AUSessionBuilder::insertAU(te::Edit& edit, te::AudioTrack& track
     return plugin;
 }
 
-te::Plugin::Ptr AUSessionBuilder::insertAuxSend(te::Edit& edit, te::AudioTrack& track,
+te::Plugin::Ptr SystemAuSessionBuilder::insertAuxSend(te::Edit& edit, te::AudioTrack& track,
                                                   int busNumber, float gainDb)
 {
     // Tracktion Engine doesn't have a direct "aux send" plugin for custom buses.
@@ -167,7 +167,7 @@ te::Plugin::Ptr AUSessionBuilder::insertAuxSend(te::Edit& edit, te::AudioTrack& 
     return nullptr;
 }
 
-void AUSessionBuilder::addAudioClip(te::AudioTrack& track, double durationSeconds)
+void SystemAuSessionBuilder::addAudioClip(te::AudioTrack& track, double durationSeconds)
 {
     auto clipDuration = tracktion::TimeDuration::fromSeconds(durationSeconds);
     track.insertWaveClip("Noise", noiseWavFile,
@@ -175,7 +175,7 @@ void AUSessionBuilder::addAudioClip(te::AudioTrack& track, double durationSecond
     track.setMute(false);
 }
 
-void AUSessionBuilder::registerPluginTypes()
+void SystemAuSessionBuilder::registerPluginTypes()
 {
     if (pluginsRegistered) return;
 
@@ -191,7 +191,7 @@ void AUSessionBuilder::registerPluginTypes()
 // Per-track plugin chains (from benchmark_session_layout.md)
 // ---------------------------------------------------------------------------
 
-void AUSessionBuilder::buildTrackChain(te::Edit& edit, te::AudioTrack& track, int trackNumber)
+void SystemAuSessionBuilder::buildTrackChain(te::Edit& edit, te::AudioTrack& track, int trackNumber)
 {
     // Track numbering: 1-indexed in the layout doc, 0-indexed here.
     // Each track gets insert plugins per the session layout.
@@ -360,7 +360,7 @@ void AUSessionBuilder::buildTrackChain(te::Edit& edit, te::AudioTrack& track, in
 // Bus chains
 // ---------------------------------------------------------------------------
 
-void AUSessionBuilder::buildDrumBus(te::Edit& edit, te::AudioTrack& bus)
+void SystemAuSessionBuilder::buildDrumBus(te::Edit& edit, te::AudioTrack& bus)
 {
     insertAU(edit, bus, "AUNBandEQ", -1);
     insertAU(edit, bus, "AUDynamicsProcessor", -1);
@@ -368,7 +368,7 @@ void AUSessionBuilder::buildDrumBus(te::Edit& edit, te::AudioTrack& bus)
     insertAU(edit, bus, "AUPeakLimiter", -1);
 }
 
-void AUSessionBuilder::buildBassBus(te::Edit& edit, te::AudioTrack& bus)
+void SystemAuSessionBuilder::buildBassBus(te::Edit& edit, te::AudioTrack& bus)
 {
     insertAU(edit, bus, "AUParametricEQ", -1);
     insertAU(edit, bus, "AUParametricEQ", -1);
@@ -376,19 +376,19 @@ void AUSessionBuilder::buildBassBus(te::Edit& edit, te::AudioTrack& bus)
     insertAU(edit, bus, "AUMultibandCompressor", -1);
 }
 
-void AUSessionBuilder::buildGuitarBus(te::Edit& edit, te::AudioTrack& bus)
+void SystemAuSessionBuilder::buildGuitarBus(te::Edit& edit, te::AudioTrack& bus)
 {
     insertAU(edit, bus, "AUNBandEQ", -1);
     insertAU(edit, bus, "AUDynamicsProcessor", -1);
 }
 
-void AUSessionBuilder::buildKeysBus(te::Edit& edit, te::AudioTrack& bus)
+void SystemAuSessionBuilder::buildKeysBus(te::Edit& edit, te::AudioTrack& bus)
 {
     insertAU(edit, bus, "AUParametricEQ", -1);
     insertAU(edit, bus, "AUDynamicsProcessor", -1);
 }
 
-void AUSessionBuilder::buildVocalBus(te::Edit& edit, te::AudioTrack& bus)
+void SystemAuSessionBuilder::buildVocalBus(te::Edit& edit, te::AudioTrack& bus)
 {
     insertAU(edit, bus, "AUNBandEQ", -1);
     insertAU(edit, bus, "AUDynamicsProcessor", -1);
@@ -396,13 +396,13 @@ void AUSessionBuilder::buildVocalBus(te::Edit& edit, te::AudioTrack& bus)
     insertAU(edit, bus, "AUPeakLimiter", -1);
 }
 
-void AUSessionBuilder::buildMusicBus(te::Edit& edit, te::AudioTrack& bus)
+void SystemAuSessionBuilder::buildMusicBus(te::Edit& edit, te::AudioTrack& bus)
 {
     insertAU(edit, bus, "AUParametricEQ", -1);
     insertAU(edit, bus, "AUDynamicsProcessor", -1);
 }
 
-void AUSessionBuilder::buildMixBus(te::Edit& edit, te::AudioTrack& bus)
+void SystemAuSessionBuilder::buildMixBus(te::Edit& edit, te::AudioTrack& bus)
 {
     insertAU(edit, bus, "AUNBandEQ", -1);
     insertAU(edit, bus, "AUDynamicsProcessor", -1);
@@ -414,7 +414,7 @@ void AUSessionBuilder::buildMixBus(te::Edit& edit, te::AudioTrack& bus)
 // FX returns
 // ---------------------------------------------------------------------------
 
-void AUSessionBuilder::buildFXReturn(te::Edit& edit, te::AudioTrack& track, int fxNumber)
+void SystemAuSessionBuilder::buildFXReturn(te::Edit& edit, te::AudioTrack& track, int fxNumber)
 {
     switch (fxNumber)
     {
@@ -458,7 +458,7 @@ void AUSessionBuilder::buildFXReturn(te::Edit& edit, te::AudioTrack& track, int 
 // Neural model insertion (delegates to same logic as EditBuilder)
 // ---------------------------------------------------------------------------
 
-void AUSessionBuilder::addCallbackStart(te::AudioTrack& track, CallbackTimer* timer,
+void SystemAuSessionBuilder::addCallbackStart(te::AudioTrack& track, CallbackTimer* timer,
                                          ThreadIDLogger* threadIdLogger)
 {
     auto plugin = track.edit.getPluginCache().createNewPlugin(
@@ -471,14 +471,14 @@ void AUSessionBuilder::addCallbackStart(te::AudioTrack& track, CallbackTimer* ti
     }
 }
 
-TimingLogger* AUSessionBuilder::addNeuralPlugin(te::AudioTrack& track, BackendType backend,
+TimingLogger* SystemAuSessionBuilder::addNeuralPlugin(te::AudioTrack& track, BackendType backend,
                                                  ModelType model, ModelSize size, double clipDuration,
                                                  SessionTimingInfo& sessionInfo)
 {
     addAudioClip(track, clipDuration);
 
     // Plugin display name — kept byte-identical to the pre-refactor
-    // AUSessionBuilder (note the Direct/Anira prefixes differ from EditBuilder).
+    // SystemAuSessionBuilder (note the Direct/Anira prefixes differ from EditBuilder).
     juce::String name;
     switch (backend)
     {
@@ -507,7 +507,7 @@ TimingLogger* AUSessionBuilder::addNeuralPlugin(te::AudioTrack& track, BackendTy
 // Build the full session
 // ---------------------------------------------------------------------------
 
-SessionTimingInfo AUSessionBuilder::buildSession(te::Edit& edit, BackendType backend,
+SessionTimingInfo SystemAuSessionBuilder::buildSession(te::Edit& edit, BackendType backend,
                                                   ModelType model, ModelSize size, int activeTracks,
                                                   double sampleRate)
 {
@@ -598,17 +598,17 @@ SessionTimingInfo AUSessionBuilder::buildSession(te::Edit& edit, BackendType bac
     struct BusConfig {
         int index;
         const char* name;
-        void (AUSessionBuilder::*buildFn)(te::Edit&, te::AudioTrack&);
+        void (SystemAuSessionBuilder::*buildFn)(te::Edit&, te::AudioTrack&);
     };
 
     BusConfig buses[] = {
-        {24, "Drum Bus",   &AUSessionBuilder::buildDrumBus},
-        {25, "Bass Bus",   &AUSessionBuilder::buildBassBus},
-        {26, "Guitar Bus", &AUSessionBuilder::buildGuitarBus},
-        {27, "Keys Bus",   &AUSessionBuilder::buildKeysBus},
-        {28, "Vocal Bus",  &AUSessionBuilder::buildVocalBus},
-        {29, "Music Bus",  &AUSessionBuilder::buildMusicBus},
-        {30, "Mix Bus",    &AUSessionBuilder::buildMixBus},
+        {24, "Drum Bus",   &SystemAuSessionBuilder::buildDrumBus},
+        {25, "Bass Bus",   &SystemAuSessionBuilder::buildBassBus},
+        {26, "Guitar Bus", &SystemAuSessionBuilder::buildGuitarBus},
+        {27, "Keys Bus",   &SystemAuSessionBuilder::buildKeysBus},
+        {28, "Vocal Bus",  &SystemAuSessionBuilder::buildVocalBus},
+        {29, "Music Bus",  &SystemAuSessionBuilder::buildMusicBus},
+        {30, "Mix Bus",    &SystemAuSessionBuilder::buildMixBus},
     };
 
     for (auto& bus : buses)

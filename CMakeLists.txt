@@ -77,6 +77,24 @@ set(PLUGIN_SOURCES
 set(RUNNER_SOURCES
     src/runners/IsolatedRunner.h
     src/runners/IsolatedRunner.cpp
+    src/runners/ContentionRunner.h
+    src/runners/ContentionRunner.cpp
+)
+
+set(SCENARIO_SOURCES
+    src/scenarios/Scenario.h
+    src/scenarios/ScenarioRegistry.h
+    src/scenarios/ScenarioRegistry.cpp
+    src/scenarios/MixContentionScenario.h
+    src/scenarios/MixContentionScenario.cpp
+    src/scenarios/InstanceCountScenario.h
+    src/scenarios/InstanceCountScenario.cpp
+    src/scenarios/SerialDepthScenario.h
+    src/scenarios/SerialDepthScenario.cpp
+    src/scenarios/ConfigurableScenario.h
+    src/scenarios/ConfigurableScenario.cpp
+    src/scenarios/SystemAuSessionBuilder.h
+    src/scenarios/SystemAuSessionBuilder.cpp
 )
 
 set(CONTENTION_SOURCES
@@ -84,8 +102,6 @@ set(CONTENTION_SOURCES
     src/contention/EditBuilder.cpp
     src/contention/TracktionPlaybackTest.h
     src/contention/TracktionPlaybackTest.cpp
-    src/contention/AUSessionBuilder.h
-    src/contention/AUSessionBuilder.cpp
 )
 
 # ---------------------------------------------------------------------------
@@ -103,6 +119,7 @@ function(nab_add_benchmark_target TARGET_NAME BINARY_NAME)
         ${CORE_SOURCES}
         ${PLUGIN_SOURCES}
         ${RUNNER_SOURCES}
+        ${SCENARIO_SOURCES}
         ${CONTENTION_SOURCES}
     )
     set_target_properties(${TARGET_NAME} PROPERTIES OUTPUT_NAME "${BINARY_NAME}")
@@ -199,6 +216,40 @@ if(BUILD_XSIMD_VARIANT)
     )
     message(STATUS "Building XSIMD variant: nab-engine-xsimd")
 endif()
+
+# ---------------------------------------------------------------------------
+# Unit tests (pure logic — no audio device, models, or heavy deps required)
+# ---------------------------------------------------------------------------
+enable_testing()
+
+add_executable(nab_test_stats tests/cpp/test_stats.cpp)
+target_include_directories(nab_test_stats PRIVATE src)
+add_test(NAME stats COMMAND nab_test_stats)
+
+add_executable(nab_test_config
+    tests/cpp/test_config_manifest.cpp
+    src/core/ModelManifest.cpp
+    src/backends/InferenceBackend.cpp
+)
+target_include_directories(nab_test_config PRIVATE
+    src
+    ${NAB_RTNEURAL_ROOT}/modules/json
+)
+
+add_test(NAME config-base
+    COMMAND nab_test_config load-config ${CMAKE_CURRENT_SOURCE_DIR}/configs/base.json)
+add_test(NAME config-smoke
+    COMMAND nab_test_config load-config ${CMAKE_CURRENT_SOURCE_DIR}/configs/smoke.json)
+add_test(NAME config-paper-values
+    COMMAND nab_test_config check-paper ${CMAKE_CURRENT_SOURCE_DIR}/experiments/dafx26-paper/config.json)
+add_test(NAME manifest-paper
+    COMMAND nab_test_config load-manifest ${CMAKE_CURRENT_SOURCE_DIR}/experiments/dafx26-paper/models.manifest.json)
+add_test(NAME config-incomplete-rejected
+    COMMAND nab_test_config load-config ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/data/incomplete-config.json)
+set_tests_properties(config-incomplete-rejected PROPERTIES WILL_FAIL TRUE)
+add_test(NAME config-missing-rejected
+    COMMAND nab_test_config load-config ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/data/does-not-exist.json)
+set_tests_properties(config-missing-rejected PROPERTIES WILL_FAIL TRUE)
 
 # ---------------------------------------------------------------------------
 # CoreML model compilation (custom command)

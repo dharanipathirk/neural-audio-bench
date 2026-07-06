@@ -17,30 +17,33 @@
 namespace te = tracktion::engine;
 
 // ---------------------------------------------------------------------------
-// Builds a realistic 36-track mixing session using Apple system Audio Units
-// as described in benchmark_session_layout.md.
+// Dimension A's system-AU session builder. Builds a realistic 36-track mixing
+// session using Apple system Audio Units (AUParametricEQ, AUDynamicsProcessor,
+// AUMatrixReverb, ...) for CPU contention, as described in
+// benchmark_session_layout.md.
 //
 // 24 source tracks + group buses + FX returns + mix bus.
-// Track 15 (Electric Lead Guitar) hosts the neural model under test.
-// All other tracks use macOS system AUs (AUParametricEQ, AUDynamicsProcessor,
-// AUMatrixReverb, etc.) for realistic CPU contention.
+// Track 15 (Electric Lead Guitar) hosts the neural model under test; all other
+// tracks use macOS system AUs. This is the real-AU variant of the Mix
+// Contention scenario (MixContentionScenario); the custom-DSP fallback lives in
+// the scenario itself and uses EditBuilder's lightweight DSP plugins instead.
 // ---------------------------------------------------------------------------
 
 // Forward from EditBuilder.h
 struct SessionTimingInfo;
 
-class AUSessionBuilder
+class SystemAuSessionBuilder
 {
 public:
-    AUSessionBuilder(te::Engine& engine, const std::string& modelDir,
-                     const std::vector<ModelSpec>& specs);
-    ~AUSessionBuilder();
+    SystemAuSessionBuilder(te::Engine& engine, const std::string& modelDir,
+                           const std::vector<ModelSpec>& specs);
+    ~SystemAuSessionBuilder();
 
     // Scan for required Apple system AUs. Returns true if all found.
     // Must be called before buildSession().
     bool scanForRequiredAUs();
 
-    // Build the full 32-track session.
+    // Build the full 36-track session.
     // activeTracks: how many conventional tracks are active (0-24).
     // Track 15 (neural) is always active.
     SessionTimingInfo buildSession(

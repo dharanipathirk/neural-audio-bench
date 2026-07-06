@@ -23,7 +23,8 @@
 #include "backends/BackendRegistry.h"
 #include "core/ModelManifest.h"
 #include "runners/IsolatedRunner.h"
-#include "contention/EditBuilder.h"
+#include "runners/ContentionRunner.h"
+#include "scenarios/ScenarioRegistry.h"
 #include "contention/TracktionPlaybackTest.h"
 
 #include <cstdio>
@@ -240,7 +241,12 @@ int main(int argc, char* argv[])
             return 1;
         }
 
-        ContentionBenchmark contention(engine, modelDir, configPath, modelSpecs);
+        // Register the contention scenarios (built-ins A, B, C in execution
+        // order, then any custom_scenarios from the config).
+        nab::ScenarioRegistry scenarios;
+        nab::registerBuiltinScenarios(scenarios, engine, modelDir, modelSpecs, globalCfg);
+
+        ContentionRunner contention(engine, configPath, modelSpecs, scenarios);
         contention.runAll(csvFile);
 
         fclose(csvFile);

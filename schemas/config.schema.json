@@ -68,6 +68,76 @@
         "^_": {},
         "^[A-Za-z]": { "type": "boolean" }
       }
+    },
+    "custom_scenarios": {
+      "type": "array",
+      "description": "Optional data-driven contention scenarios (ConfigurableScenario). Each entry registers an extra sweep after the built-in dimensions A/B/C. Absent in the standard configs.",
+      "items": {
+        "type": "object",
+        "required": ["id", "sweep", "buffer_sizes", "tracks"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Scenario id — becomes the CSV 'dimension' column value (with an additional '<id>_cb' row per config)."
+          },
+          "sweep": {
+            "type": "object",
+            "required": ["parameter", "values"],
+            "properties": {
+              "parameter": {
+                "type": "string",
+                "description": "Human-readable name of the swept parameter (e.g. 'track_count')."
+              },
+              "values": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "integer", "minimum": 0 },
+                "description": "Sweep values; each is written to the CSV contention_level column."
+              }
+            },
+            "additionalProperties": false
+          },
+          "buffer_sizes": { "$ref": "#/$defs/bufferSizes" },
+          "tracks": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Track groups. Exactly one group should set 'neural': true so the run is measurable.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "count": {
+                  "description": "Number of tracks in this group; the string \"sweep\" means the current sweep value.",
+                  "oneOf": [
+                    { "type": "integer", "minimum": 0 },
+                    { "const": "sweep" }
+                  ]
+                },
+                "neural": {
+                  "type": "boolean",
+                  "description": "This group's tracks host the neural plugin under test."
+                },
+                "clip": {
+                  "const": "noise",
+                  "description": "Audio source for the track ('noise' is currently the only option)."
+                },
+                "chain": {
+                  "type": "array",
+                  "items": { "enum": ["eq", "compressor", "reverb", "delay"] },
+                  "description": "Plugin chain (pre-neural chain on a neural track)."
+                },
+                "chain_after": {
+                  "type": "array",
+                  "items": { "enum": ["eq", "compressor", "reverb", "delay"] },
+                  "description": "Post-neural plugin chain (neural tracks only)."
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
     }
   },
   "patternProperties": { "^_": {} },

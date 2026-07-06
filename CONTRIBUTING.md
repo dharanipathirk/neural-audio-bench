@@ -45,8 +45,11 @@ require re-baselining against `experiments/dafx26-paper/expected/`:
 
 ## Style
 
-- C++: C++20, formatted with the repo `.clang-format` (Allman braces,
-  4-space indent). No allocation, locking, or logging on the audio thread.
+- C++: C++20, Allman braces, 4-space indent — match the surrounding code
+  (`.clang-format` approximates the style for new files; the existing
+  measurement core is deliberately kept byte-identical to the code that
+  produced the paper results, so don't mass-reformat). No allocation,
+  locking, or logging on the audio thread.
 - Python: ruff (lint + format), settings in `pyproject.toml`.
 - Every source file carries an SPDX `GPL-3.0-or-later` header.
 - Dependency changes go through `cmake/Versions.cmake` (pinned SHA or

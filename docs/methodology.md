@@ -93,6 +93,17 @@ precedes each benchmark phase so the first configuration doesn't benefit
 from a cold CPU, and a 120 s cooldown between phases restores a consistent
 baseline. Run under `caffeinate` to prevent sleep; `nab run` handles this.
 
+**Transient-failure retry**: a real-time playback configuration can
+occasionally fail to start/restart the transport or record no timing data —
+Core Audio transients, most likely when the audio graph has not settled
+(e.g. immediately after a heavy prior workload). The contention runner
+retries such a configuration up to three times, letting the device settle
+between attempts, before recording an explicit `error` result row. This
+keeps long sweeps robust without touching the measurement of a successful
+configuration. A `status = error` / `skipped` row in the results therefore
+means the configuration failed *after* retries (or was inapplicable), never
+a one-off hiccup.
+
 ## Statistics notes
 
 - Median is interpolated; p95/p99/p99.9 use nearest-rank — tail

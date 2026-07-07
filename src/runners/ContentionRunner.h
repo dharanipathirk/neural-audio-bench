@@ -16,6 +16,12 @@
 
 namespace te = tracktion::engine;
 
+// Outcome of one contention configuration. Transient failures (transport
+// start/restart hiccups, missing timing data — typically the audio graph not
+// yet settled) are retried before an error row is written; permanent failures
+// (device sample-rate mismatch, plugin creation failure) are recorded at once.
+enum class ConfigResult { Ok, TransientFailure, PermanentFailure };
+
 // ---------------------------------------------------------------------------
 // Runs the full contention benchmark suite using real-time CoreAudio playback.
 //
@@ -52,7 +58,13 @@ private:
     // Measurement protocol core — preserved verbatim from the old
     // ContentionBenchmark::runSingleConfig, except the session is built via the
     // scenario and the CSV sweep columns come from scenario.csvColumns().
-    void runSingleConfig(
+    //
+    // Writes the ok result rows on success and returns Ok. On failure it writes
+    // NOTHING and returns the failure kind, setting failStatus ("error"/
+    // "skipped") and failReason for the caller to record after retries are
+    // exhausted. This keeps the successful-measurement path byte-identical while
+    // letting the caller retry transient failures.
+    ConfigResult runSingleConfig(
         FILE* csvFile,
         nab::Scenario& scenario,
         BackendType backend,
@@ -60,5 +72,7 @@ private:
         ModelSize size,
         int bufferSize,
         int sweepValue,
-        int rep);
+        int rep,
+        std::string& failStatus,
+        std::string& failReason);
 };

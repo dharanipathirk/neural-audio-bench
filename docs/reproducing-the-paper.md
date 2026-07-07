@@ -68,7 +68,15 @@ macOS 26.4, Apple Clang 21.0.0, BlackHole 2ch.
   paper's actual claims — reproduce across generations.
 - *macOS/toolchain drift*: newer OS or Clang versions can shift absolute
   numbers a few percent; the run manifest records both so comparisons are
-  attributable.
+  attributable. In our own re-run on macOS 26.5 (paper: 26.4), isolated
+  medians tracked the archived CSVs at +0.8% median drift across all 504
+  configurations, with every headline anchor within 4%. A handful of
+  microsecond-scale small-model configs (e.g. WaveNet-Small at large buffer
+  sizes, where absolute cost is ~10-30 µs) drifted 20-30%; A/B testing the
+  original vs. re-exported CoreML models isolated this to CoreML-runtime and
+  coremlcompiler changes across the OS bump, not the benchmark — such tiny
+  absolute costs are dominated by runtime overhead and are not where any
+  conclusion rests.
 
 ## Checking a reproduction
 

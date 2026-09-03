@@ -25,9 +25,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CONFIG = REPO_ROOT / "benchmark_config.json"
+DEFAULT_CONFIG = REPO_ROOT / "configs" / "base.json"
 DEFAULT_BENCH = REPO_ROOT / "build" / "nab-engine"
 DEFAULT_MODELS = REPO_ROOT / "models"
 DECODE_AMX = Path(__file__).resolve().parent / "decode_amx.py"
@@ -127,7 +126,9 @@ def make_temp_config(
     return cfg
 
 
-def run_decode_amx(pid: int, backend: str, json_out: Path, verbose: bool) -> subprocess.CompletedProcess[str]:
+def run_decode_amx(
+    pid: int, backend: str, json_out: Path, verbose: bool
+) -> subprocess.CompletedProcess[str]:
     cmd = [
         sys.executable,
         str(DECODE_AMX),
@@ -156,11 +157,25 @@ def wait_for_process(proc: subprocess.Popen[str], timeout_s: float) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run isolated-only AMX side analysis in a separate results tree.")
-    parser.add_argument("--bench", type=Path, default=DEFAULT_BENCH, help="Path to nab-engine binary")
-    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG, help="Base benchmark_config.json")
-    parser.add_argument("--models", type=Path, default=DEFAULT_MODELS, help="Model directory override")
-    parser.add_argument("--out-dir", type=Path, default=None, help="Output directory (default: microarch/results/<timestamp>)")
+    parser = argparse.ArgumentParser(
+        description="Run isolated-only AMX side analysis in a separate results tree.",
+        allow_abbrev=False,
+    )
+    parser.add_argument(
+        "--bench", type=Path, default=DEFAULT_BENCH, help="Path to nab-engine binary"
+    )
+    parser.add_argument(
+        "--config", type=Path, default=DEFAULT_CONFIG, help="Base benchmark config JSON"
+    )
+    parser.add_argument(
+        "--models", type=Path, default=DEFAULT_MODELS, help="Model directory override"
+    )
+    parser.add_argument(
+        "--out-dir",
+        type=Path,
+        default=None,
+        help="Output directory (default: microarch/results/<timestamp>)",
+    )
     parser.add_argument("--backends", type=str, default=None, help="Comma-separated backend list")
     parser.add_argument("--model-types", type=str, default=None, help="Comma-separated model list")
     parser.add_argument("--sizes", type=str, default="large", help="Comma-separated model sizes")
@@ -169,10 +184,26 @@ def main() -> int:
     parser.add_argument("--target-seconds", type=float, default=6.0)
     parser.add_argument("--min-iterations", type=int, default=20000)
     parser.add_argument("--throughput-seconds", type=float, default=5.0)
-    parser.add_argument("--attach-delay", type=float, default=3.0, help="Seconds to wait before attaching decode_amx")
-    parser.add_argument("--post-timeout", type=float, default=120.0, help="Seconds to wait for benchmark completion after AMX scan")
-    parser.add_argument("--verbose-amx", action="store_true", help="Pass --verbose to decode_amx.py")
-    parser.add_argument("--dry-run", action="store_true", help="Generate configs and manifest without launching runs")
+    parser.add_argument(
+        "--attach-delay",
+        type=float,
+        default=3.0,
+        help="Seconds to wait before attaching decode_amx",
+    )
+    parser.add_argument(
+        "--post-timeout",
+        type=float,
+        default=120.0,
+        help="Seconds to wait for benchmark completion after AMX scan",
+    )
+    parser.add_argument(
+        "--verbose-amx", action="store_true", help="Pass --verbose to decode_amx.py"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Generate configs and manifest without launching runs",
+    )
     args = parser.parse_args()
 
     bench = args.bench.resolve()
@@ -204,7 +235,7 @@ def main() -> int:
         return 1
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = (args.out_dir.resolve() if args.out_dir else (REPO_ROOT / "microarch" / "results" / ts))
+    out_dir = args.out_dir.resolve() if args.out_dir else (REPO_ROOT / "microarch" / "results" / ts)
     cfg_dir = out_dir / "configs"
     csv_dir = out_dir / "isolated_csv"
     log_dir = out_dir / "logs"
@@ -213,7 +244,9 @@ def main() -> int:
         path.mkdir(parents=True, exist_ok=True)
 
     base_cfg = load_json(config)
-    specs = [RunSpec(backend, model, size) for backend in backends for model in models for size in sizes]
+    specs = [
+        RunSpec(backend, model, size) for backend in backends for model in models for size in sizes
+    ]
 
     manifest: list[dict] = []
     print(f"Output directory: {out_dir}")

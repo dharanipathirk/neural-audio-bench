@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Dharanipathi Rathna Kumar Balasubramaniam
 /*
-    Neural Audio Benchmark: BNNSGraph vs RTNeural vs anira
+    neural-audio-bench engine
 
     Measures inference framework performance under:
     1. Isolated conditions (raw speed)
@@ -69,6 +69,7 @@ int main(int argc, char* argv[])
     std::string modelDirOverride;
     std::string configPathOverride;
     bool allowAnyDevice = false;
+    bool listBackends = false;
 
     for (int i = 1; i < argc; i++)
     {
@@ -84,6 +85,8 @@ int main(int argc, char* argv[])
             configPathOverride = argv[++i];
         else if (strcmp(argv[i], "--allow-any-device") == 0)
             allowAnyDevice = true;
+        else if (strcmp(argv[i], "--list-backends") == 0)
+            listBackends = true;
         else if (strcmp(argv[i], "--help") == 0)
         {
             printf("Usage: %s [options]\n", argv[0]);
@@ -91,10 +94,30 @@ int main(int argc, char* argv[])
             printf("  --output <path>                   Output CSV file\n");
             printf("  --output-dir <dir>                Output directory (for --mode all)\n");
             printf("  --models <dir>                    Override model directory\n");
-            printf("  --config <path>                   Override benchmark_config.json path\n");
+            printf("  --config <path>                   Complete benchmark config (required)\n");
             printf("  --allow-any-device                Allow contention mode on non-BlackHole devices\n");
+            printf("  --list-backends                   List backends compiled into this binary\n");
             return 0;
         }
+        else
+        {
+            fprintf(stderr, "ERROR: unknown or incomplete argument '%s' (use --help).\n", argv[i]);
+            return 2;
+        }
+    }
+
+    nab::registerBuiltinBackends();
+    if (listBackends)
+    {
+        for (const auto& name : BackendRegistry::instance().names())
+            printf("%s\n", name.c_str());
+        return 0;
+    }
+
+    if (mode != "isolated" && mode != "contention" && mode != "test-playback" && mode != "all")
+    {
+        fprintf(stderr, "ERROR: invalid --mode '%s' (use --help).\n", mode.c_str());
+        return 2;
     }
 
     std::string modelDir = modelDirOverride.empty() ? MODEL_DIR : modelDirOverride;
@@ -121,6 +144,9 @@ int main(int argc, char* argv[])
     fprintf(stderr, "Sample rate: %.0f Hz\n", globalCfg.sampleRate);
     fprintf(stderr, "Throughput: %.1fs, Reps: %d\n",
             globalCfg.isolatedThroughputSeconds, globalCfg.isolatedReps);
+    for (const auto& [name, enabled] : globalCfg.backendEnabled)
+        if (enabled && !BackendRegistry::instance().has(name))
+            fprintf(stderr, "Backend unavailable in this binary: %s (skipped)\n", name.c_str());
 
     // Initialize JUCE message manager (required even for CLI)
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -129,8 +155,6 @@ int main(int argc, char* argv[])
 
     // Register the compile-available inference backends (fixed order preserves
     // benchmark execution order / CSV row order).
-    nab::registerBuiltinBackends();
-
     // Resolve the model catalog once. Uses the manifest referenced by the
     // config (path relative to the config file) if present, else falls back to
     // the legacy models/{arch}/{size} directory layout.

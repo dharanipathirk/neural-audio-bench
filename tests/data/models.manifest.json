@@ -1,0 +1,190 @@
+{
+  "_comment": "Test fixture: the nine built-in models exactly as `nab export` describes them (ids, tiers, hyperparameters, parameter counts, format paths). Used by the C++ and Python manifest tests; the format paths need not exist.",
+  "schema_version": 1,
+  "models_root": "../../models",
+  "models": [
+    {
+      "id": "lstm_small",
+      "arch": "lstm",
+      "size": "small",
+      "display_name": "LSTM-S",
+      "state": "stateful",
+      "channels": 1,
+      "param_count": 1861,
+      "hyperparams": {
+        "hidden": 20
+      },
+      "formats": {
+        "coreml": "lstm/small/stateful_lstm_small.mlmodelc",
+        "onnx": "lstm/small/stateful_lstm_small.onnx",
+        "torchscript": "lstm/small/stateful_lstm_small.pt",
+        "rtneural": "lstm/small/stateful_lstm_small_weights.json"
+      },
+      "notes": "CoreML export is fp16 (CoreML state tensors must be fp16, so stateful mlprogram exports run in half precision): BNNSGraph computes in fp16 while ONNX Runtime, LibTorch, and RTNeural compute in fp32."
+    },
+    {
+      "id": "lstm_medium",
+      "arch": "lstm",
+      "size": "medium",
+      "display_name": "LSTM-M",
+      "state": "stateful",
+      "channels": 1,
+      "param_count": 6921,
+      "hyperparams": {
+        "hidden": 40
+      },
+      "formats": {
+        "coreml": "lstm/medium/stateful_lstm_medium.mlmodelc",
+        "onnx": "lstm/medium/stateful_lstm_medium.onnx",
+        "torchscript": "lstm/medium/stateful_lstm_medium.pt",
+        "rtneural": "lstm/medium/stateful_lstm_medium_weights.json"
+      },
+      "notes": "CoreML export is fp16 (CoreML state tensors must be fp16, so stateful mlprogram exports run in half precision): BNNSGraph computes in fp16 while ONNX Runtime, LibTorch, and RTNeural compute in fp32."
+    },
+    {
+      "id": "lstm_large",
+      "arch": "lstm",
+      "size": "large",
+      "display_name": "LSTM-L",
+      "state": "stateful",
+      "channels": 1,
+      "param_count": 38113,
+      "hyperparams": {
+        "hidden": 96
+      },
+      "formats": {
+        "coreml": "lstm/large/stateful_lstm_large.mlmodelc",
+        "onnx": "lstm/large/stateful_lstm_large.onnx",
+        "torchscript": "lstm/large/stateful_lstm_large.pt",
+        "rtneural": "lstm/large/stateful_lstm_large_weights.json"
+      },
+      "notes": "CoreML export is fp16 (CoreML state tensors must be fp16, so stateful mlprogram exports run in half precision): BNNSGraph computes in fp16 while ONNX Runtime, LibTorch, and RTNeural compute in fp32."
+    },
+    {
+      "id": "tcn_small",
+      "arch": "tcn",
+      "size": "small",
+      "display_name": "TCN-S",
+      "state": "stateful",
+      "channels": 1,
+      "param_count": 4337,
+      "hyperparams": {
+        "channels": 16,
+        "kernel_size": 3,
+        "num_layers": 4
+      },
+      "formats": {
+        "coreml": "tcn/small/stateful_tcn_small.mlmodelc",
+        "onnx": "tcn/small/stateful_tcn_small.onnx",
+        "torchscript": "tcn/small/stateful_tcn_small.pt",
+        "rtneural": "tcn/small/stateful_tcn_small_weights.json"
+      },
+      "notes": "CoreML export is fp16 (CoreML state tensors must be fp16, so stateful mlprogram exports run in half precision): BNNSGraph computes in fp16 while ONNX Runtime, LibTorch, and RTNeural compute in fp32. ONNX export is stateless (ONNX Runtime has no InOut mechanism for conv state buffers)."
+    },
+    {
+      "id": "tcn_medium",
+      "arch": "tcn",
+      "size": "medium",
+      "display_name": "TCN-M",
+      "state": "stateful",
+      "channels": 1,
+      "param_count": 33633,
+      "hyperparams": {
+        "channels": 32,
+        "kernel_size": 3,
+        "num_layers": 8
+      },
+      "formats": {
+        "coreml": "tcn/medium/stateful_tcn_medium.mlmodelc",
+        "onnx": "tcn/medium/stateful_tcn_medium.onnx",
+        "torchscript": "tcn/medium/stateful_tcn_medium.pt",
+        "rtneural": "tcn/medium/stateful_tcn_medium_weights.json"
+      },
+      "notes": "CoreML export is fp16 (CoreML state tensors must be fp16, so stateful mlprogram exports run in half precision): BNNSGraph computes in fp16 while ONNX Runtime, LibTorch, and RTNeural compute in fp32. ONNX export is stateless (ONNX Runtime has no InOut mechanism for conv state buffers)."
+    },
+    {
+      "id": "tcn_large",
+      "arch": "tcn",
+      "size": "large",
+      "display_name": "TCN-L",
+      "state": "stateful",
+      "channels": 1,
+      "param_count": 93745,
+      "hyperparams": {
+        "channels": 48,
+        "kernel_size": 3,
+        "num_layers": 10
+      },
+      "formats": {
+        "coreml": "tcn/large/stateful_tcn_large.mlmodelc",
+        "onnx": "tcn/large/stateful_tcn_large.onnx",
+        "torchscript": "tcn/large/stateful_tcn_large.pt",
+        "rtneural": "tcn/large/stateful_tcn_large_weights.json"
+      },
+      "notes": "CoreML export is fp16 (CoreML state tensors must be fp16, so stateful mlprogram exports run in half precision): BNNSGraph computes in fp16 while ONNX Runtime, LibTorch, and RTNeural compute in fp32. ONNX export is stateless (ONNX Runtime has no InOut mechanism for conv state buffers)."
+    },
+    {
+      "id": "wavenet_small",
+      "arch": "wavenet",
+      "size": "small",
+      "display_name": "WaveNet-S",
+      "state": "stateful",
+      "channels": 1,
+      "param_count": 841,
+      "hyperparams": {
+        "channels": 8,
+        "kernel_size": 2,
+        "num_layers": 3
+      },
+      "formats": {
+        "coreml": "wavenet/small/stateful_wavenet_small.mlmodelc",
+        "onnx": "wavenet/small/stateful_wavenet_small.onnx",
+        "torchscript": "wavenet/small/stateful_wavenet_small.pt",
+        "rtneural": "wavenet/small/stateful_wavenet_small_weights.json"
+      },
+      "notes": "CoreML export is fp16 (CoreML state tensors must be fp16, so stateful mlprogram exports run in half precision): BNNSGraph computes in fp16 while ONNX Runtime, LibTorch, and RTNeural compute in fp32. ONNX export is stateless (ONNX Runtime has no InOut mechanism for conv state buffers)."
+    },
+    {
+      "id": "wavenet_medium",
+      "arch": "wavenet",
+      "size": "medium",
+      "display_name": "WaveNet-M",
+      "state": "stateful",
+      "channels": 1,
+      "param_count": 10609,
+      "hyperparams": {
+        "channels": 16,
+        "kernel_size": 2,
+        "num_layers": 10
+      },
+      "formats": {
+        "coreml": "wavenet/medium/stateful_wavenet_medium.mlmodelc",
+        "onnx": "wavenet/medium/stateful_wavenet_medium.onnx",
+        "torchscript": "wavenet/medium/stateful_wavenet_medium.pt",
+        "rtneural": "wavenet/medium/stateful_wavenet_medium_weights.json"
+      },
+      "notes": "CoreML export is fp16 (CoreML state tensors must be fp16, so stateful mlprogram exports run in half precision): BNNSGraph computes in fp16 while ONNX Runtime, LibTorch, and RTNeural compute in fp32. ONNX export is stateless (ONNX Runtime has no InOut mechanism for conv state buffers)."
+    },
+    {
+      "id": "wavenet_large",
+      "arch": "wavenet",
+      "size": "large",
+      "display_name": "WaveNet-L",
+      "state": "stateful",
+      "channels": 1,
+      "param_count": 41697,
+      "hyperparams": {
+        "channels": 32,
+        "kernel_size": 2,
+        "num_layers": 10
+      },
+      "formats": {
+        "coreml": "wavenet/large/stateful_wavenet_large.mlmodelc",
+        "onnx": "wavenet/large/stateful_wavenet_large.onnx",
+        "torchscript": "wavenet/large/stateful_wavenet_large.pt",
+        "rtneural": "wavenet/large/stateful_wavenet_large_weights.json"
+      },
+      "notes": "CoreML export is fp16 (CoreML state tensors must be fp16, so stateful mlprogram exports run in half precision): BNNSGraph computes in fp16 while ONNX Runtime, LibTorch, and RTNeural compute in fp32. ONNX export is stateless (ONNX Runtime has no InOut mechanism for conv state buffers)."
+    }
+  ]
+}

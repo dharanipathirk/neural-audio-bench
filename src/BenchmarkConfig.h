@@ -5,14 +5,14 @@
 #include <json.hpp>
 #include <fstream>
 #include <array>
+#include <map>
 #include <string>
 #include <vector>
 #include <cstdio>
 #include <cstdlib>
 
 // ---------------------------------------------------------------------------
-// Runtime benchmark configuration, loaded from benchmark_config.json.
-// Falls back to compiled defaults if the config file is missing.
+// Runtime benchmark configuration, loaded from a complete JSON document.
 // ---------------------------------------------------------------------------
 
 // Model architectures
@@ -212,14 +212,13 @@ struct BenchmarkRuntimeConfig
     // Optional data-driven custom scenarios (absent in the checked-in configs).
     std::vector<CustomScenarioSpec> customScenarios;
 
-    // Which model architectures to test
-    bool modelEnabled[3] = {true, true, true}; // lstm, tcn, wavenet
-
-    // Which sizes to test
-    bool sizeEnabled[3] = {true, true, true}; // small, medium, large
-
-    // Which backends to test (indexed by BackendType enum)
-    bool backendEnabled[static_cast<int>(BackendType::COUNT)] = {true, true, true, true, true, true, true};
+    // Dynamic selectors. Unknown model architectures/sizes default to enabled
+    // so a manifest entry is benchmarked without requiring a second catalog in
+    // the config. Backends are opt-in and therefore must have an explicit true
+    // entry whose key matches InferenceBackend::name().
+    std::map<std::string, bool> modelEnabled;
+    std::map<std::string, bool> sizeEnabled;
+    std::map<std::string, bool> backendEnabled;
 
     [[noreturn]] static void fail(const std::string& configPath, const std::string& msg)
     {
@@ -283,6 +282,8 @@ struct BenchmarkRuntimeConfig
                 cfg.contentionMeasureSeconds = require(ct, "contention", "measure_seconds");
                 cfg.contentionReps = require(ct, "contention", "num_reps");
                 cfg.contentionNumTracks = require(ct, "contention", "num_tracks");
+                if (cfg.contentionNumTracks < 15)
+                    fail(configPath, "'contention.num_tracks' must be at least 15 (track 15 hosts the neural model)");
             }
 
             if (j.contains("models_manifest"))
@@ -294,43 +295,25 @@ struct BenchmarkRuntimeConfig
             if (!j.contains("model_sizes")) fail(configPath, "missing required section 'model_sizes'");
             {
                 auto& ms = j["model_sizes"];
-                cfg.sizeEnabled[0] = require(ms, "model_sizes", "small").get<bool>();
-                cfg.sizeEnabled[1] = require(ms, "model_sizes", "medium").get<bool>();
-                cfg.sizeEnabled[2] = require(ms, "model_sizes", "large").get<bool>();
+                for (auto it = ms.begin(); it != ms.end(); ++it)
+                    if (it.key().empty() || it.key()[0] != '_')
+                        cfg.sizeEnabled[it.key()] = it.value().get<bool>();
             }
 
             if (j.contains("model_types"))
             {
                 auto& mt = j["model_types"];
-                if (mt.contains("lstm")) cfg.modelEnabled[0] = mt["lstm"];
-                if (mt.contains("tcn")) cfg.modelEnabled[1] = mt["tcn"];
-                if (mt.contains("wavenet")) cfg.modelEnabled[2] = mt["wavenet"];
+                for (auto it = mt.begin(); it != mt.end(); ++it)
+                    if (it.key().empty() || it.key()[0] != '_')
+                        cfg.modelEnabled[it.key()] = it.value().get<bool>();
             }
 
             if (!j.contains("backends")) fail(configPath, "missing required section 'backends'");
             {
                 auto& be = j["backends"];
-                // Reject unknown backend names (typo protection). Keys starting
-                // with '_' are comments.
                 for (auto it = be.begin(); it != be.end(); ++it)
-                {
-                    const std::string& key = it.key();
-                    if (!key.empty() && key[0] == '_')
-                        continue;
-                    bool known = false;
-                    for (int bi = 0; bi < static_cast<int>(BackendType::COUNT); bi++)
-                        if (key == backendTypeName(static_cast<BackendType>(bi)))
-                            known = true;
-                    if (!known)
-                        fail(configPath, "unknown backend '" + key + "' in 'backends'");
-                }
-                for (int bi = 0; bi < static_cast<int>(BackendType::COUNT); bi++)
-                {
-                    auto name = std::string(backendTypeName(static_cast<BackendType>(bi)));
-                    if (!be.contains(name))
-                        fail(configPath, "missing required key 'backends." + name + "'");
-                    cfg.backendEnabled[bi] = be[name].get<bool>();
-                }
+                    if (it.key().empty() || it.key()[0] != '_')
+                        cfg.backendEnabled[it.key()] = it.value().get<bool>();
             }
 
             // Optional: data-driven custom contention scenarios. Absent in the
@@ -385,18 +368,35 @@ struct BenchmarkRuntimeConfig
 
     bool isSizeEnabled(ModelSize s) const
     {
-        return sizeEnabled[static_cast<int>(s)];
+        return isSizeEnabled(modelSizeName(s));
     }
 
     bool isModelEnabled(ModelType m) const
     {
-        return modelEnabled[static_cast<int>(m)];
+        return isModelEnabled(modelTypeNameLower(m));
     }
 
     bool isBackendEnabled(BackendType b) const
     {
-        int idx = static_cast<int>(b);
-        return idx >= 0 && idx < static_cast<int>(BackendType::COUNT) && backendEnabled[idx];
+        return isBackendEnabled(backendTypeName(b));
+    }
+
+    bool isSizeEnabled(const std::string& size) const
+    {
+        auto it = sizeEnabled.find(size);
+        return it == sizeEnabled.end() ? true : it->second;
+    }
+
+    bool isModelEnabled(const std::string& arch) const
+    {
+        auto it = modelEnabled.find(arch);
+        return it == modelEnabled.end() ? true : it->second;
+    }
+
+    bool isBackendEnabled(const std::string& backend) const
+    {
+        auto it = backendEnabled.find(backend);
+        return it != backendEnabled.end() && it->second;
     }
 };
 

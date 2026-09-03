@@ -11,7 +11,7 @@ The main benchmark answers real-time audio questions:
 
 This folder is for isolated-only explanatory analysis on Apple Silicon:
 
-- AMX instruction mix via `analysis/decode_amx.py`
+- AMX instruction mix via `microarch/decode_amx.py`
 - one backend + one model + one size per run
 - separate configs, logs, CSVs, and JSON outputs under `microarch/results/`
 
@@ -60,7 +60,7 @@ This gives a focused isolated-only explanatory pass without mixing results into
 ## Example
 
 ```bash
-python3 microarch/run_isolated_microarch.py \
+uv run python microarch/run_isolated_microarch.py \
   --bench build/nab-engine-xsimd
 ```
 

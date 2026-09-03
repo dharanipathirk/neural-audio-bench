@@ -9,7 +9,7 @@ namespace nab {
 // Moved verbatim from EditBuilder::buildDimensionC. `depth` is the current
 // sweep value.
 SessionTimingInfo SerialDepthScenario::build(te::Edit& edit, EditBuilder& builder,
-                                             BackendType backend, ModelType model, ModelSize size,
+                                             const std::string& backend, const ModelSpec& model,
                                              int sweepValue, const BenchmarkRuntimeConfig& /*cfg*/,
                                              double sampleRate)
 {
@@ -42,7 +42,7 @@ SessionTimingInfo SerialDepthScenario::build(te::Edit& edit, EditBuilder& builde
     // This gives the correct chain order.
 
     // Step 1: Neural plugin (inserts at pos 0, adds audio clip)
-    info.neuralLogger = builder.addNeuralPlugin(*track, backend, model, size, clipDuration, info);
+    info.neuralLogger = builder.addNeuralPlugin(*track, backend, model, clipDuration, info);
 
     // Step 2: Pre-neural plugins inserted at position 0 — BEFORE the neural plugin.
     // Insert in reverse order so they end up in the right sequence.

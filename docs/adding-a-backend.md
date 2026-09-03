@@ -23,9 +23,8 @@ public:
         // Load the model file for your format, allocate every buffer you
         // will ever need, warm any lazy initialization.
         // ctx.model->formatPaths.at(requiredFormat()) is an absolute path.
-        // ctx.sampleRate and ctx.maxBlockSize describe the session
-        // (maxBlockSize is 0 in isolated mode — size for the largest
-        // configured buffer instead).
+        // ctx.sampleRate and ctx.maxBlockSize describe the session. In
+        // isolated mode maxBlockSize is the largest configured buffer.
         return engine.load(ctx.model->formatPaths.at("myformat"));
     }
 
@@ -55,16 +54,19 @@ Key declarations and what they control:
 | `supportsIsolated()` | default `true`; return `false` for asynchronous/background-thread designs where per-call timing is meaningless |
 | `requiredFormat()` | which manifest format path this backend loads |
 | `supports(spec, why)` | veto specific models with a human-readable reason (emitted in results) |
-| `latencySamples()` | additional latency your design introduces (reported, not compensated) |
+| `latencySamples()` | reserved declaration for a backend's additional latency; currently neither emitted in schema-v2 CSVs nor compensated |
 | `underrunCount()/resetUnderruns()` | for asynchronous backends: callbacks where output wasn't ready |
 
 ## 2. Register it
 
-In `src/backends/backend_registration.cpp`, add alongside the others
-(registration order = execution order = CSV row order):
+Add both source files to `BACKEND_SOURCES` in `CMakeLists.txt`. Then include
+the header in `src/backends/backend_registration.cpp` and register a factory
+alongside the built-ins (registration order = execution order = CSV row order):
 
 ```cpp
-NAB_REGISTER_BACKEND(MyEngineBackend);
+reg.registerBackend("MyEngine", [] {
+    return std::make_unique<MyEngineBackend>();
+});
 ```
 
 Gate it with `#if HAS_MYENGINE` if the dependency is optional, and add the
@@ -97,3 +99,5 @@ backend that allocates in `process()` will show up with xruns and fat
 tails. For a stronger guarantee, build your backend's inference loop with
 RealtimeSanitizer (`-fsanitize=realtime`, `[[clang::nonblocking]]`) as was
 done for BNNSGraph in the paper.
+The standalone harness used for that check is included at
+[`tools/rtsan-bnns-test/`](../tools/rtsan-bnns-test/).

@@ -13,15 +13,27 @@ from __future__ import annotations
 
 import argparse
 import os
+import tempfile
 from pathlib import Path
 
-import matplotlib
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
-import seaborn as sns  # noqa: E402
+def _load_plot_dependencies() -> None:
+    """Import plotting libraries only when a figure command is executed."""
+    global matplotlib, np, pd, plt, sns
+    cache_root = Path(tempfile.gettempdir()) / (
+        f"neural-audio-bench-cache-{getattr(os, 'getuid', lambda: 0)()}"
+    )
+    cache_root.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("MPLCONFIGDIR", str(cache_root / "matplotlib"))
+    os.environ.setdefault("XDG_CACHE_HOME", str(cache_root))
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import pandas as pd
+    import seaborn as sns
+
 
 BLUE = "#0077BB"  # BNNSGraph
 ORANGE = "#CC3311"  # RTNeural
@@ -86,7 +98,25 @@ _NONPGF_RC = {
 }
 
 
+# Axis text differs between the two renderers: under PGF/usetex a literal "%"
+# starts a TeX comment and \texttt{} sets monospace, while the Agg backend
+# prints both markup sequences verbatim.
+_USE_PGF = False
+
+
+def _pct() -> str:
+    """Percent sign for labels: escaped under PGF/usetex, literal otherwise."""
+    return r"\%" if _USE_PGF else "%"
+
+
+def _tt(text: str) -> str:
+    """Monospace markup for backend names: \\texttt{} under PGF, plain otherwise."""
+    return rf"\texttt{{{text}}}" if _USE_PGF else text
+
+
 def _configure_backend(use_pgf: bool) -> None:
+    global _USE_PGF
+    _USE_PGF = use_pgf
     if use_pgf:
         os.environ["PATH"] = "/Library/TeX/texbin:" + os.environ.get("PATH", "")
         matplotlib.use("pgf", force=True)
@@ -150,7 +180,7 @@ def fig1_hero(iso: pd.DataFrame, cont: pd.DataFrame, outdir: Path):
 
             if c0_xruns > 0:
                 ax.annotate(
-                    f"{c0_p99:.0f}\\%, {c0_xruns} xruns",
+                    f"{c0_p99:.0f}{_pct()}, {c0_xruns} xruns",
                     (c0_p99, y_pos),
                     fontsize=5.5,
                     fontweight="semibold",
@@ -169,7 +199,7 @@ def fig1_hero(iso: pd.DataFrame, cont: pd.DataFrame, outdir: Path):
         y_pos += 0.3
 
     ax.axvline(x=100, color="red", linestyle="--", linewidth=0.8, alpha=0.7)
-    ax.set_xlabel("Deadline used (\\%)")
+    ax.set_xlabel(f"Deadline used ({_pct()})")
     ax.set_yticks(yticks)
     ax.set_yticklabels(ylabels, fontsize=6)
     ax.set_xlim(-5, 175)
@@ -240,7 +270,7 @@ def fig2_p99_vs_contention(cont: pd.DataFrame, outdir: Path):
 
         ax.axhline(y=100, color="red", linestyle="--", linewidth=0.8, alpha=0.7)
         ax.set_title(model + "-Large", fontsize=9, fontweight="bold")
-        ax.set_ylabel("p99 Util. (\\%)", fontsize=8)
+        ax.set_ylabel(f"p99 Util. ({_pct()})", fontsize=8)
         ax.grid(alpha=0.3)
 
     axes[-1].set_xlabel("Active Conventional Tracks")
@@ -304,7 +334,7 @@ def fig3_instance_scaling(cont: pd.DataFrame, outdir: Path):
                 )
 
     ax1.axhline(y=100, color="red", linestyle="--", linewidth=0.8, alpha=0.7)
-    ax1.set_ylabel("p99 Callback Util. (\\%)", fontsize=8)
+    ax1.set_ylabel(f"p99 Callback Util. ({_pct()})", fontsize=8)
     ax1.set_title("TCN-Large: Audio Thread Failures", fontsize=9, fontweight="bold")
     ax1.set_xticks([1, 2, 4, 8, 16])
     ax1.legend(fontsize=7, loc="upper left", frameon=True)
@@ -333,7 +363,7 @@ def fig3_instance_scaling(cont: pd.DataFrame, outdir: Path):
         ur_str = f"{ur:,}".replace(",", "{,}")  # LaTeX-safe thousands separator
         ax2.text(
             bar.get_x() + bar.get_width() / 2,
-            bar.get_height() * 1.5,
+            max(float(bar.get_height()) * 1.5, 12.0),
             ur_str,
             ha="center",
             va="bottom",
@@ -413,7 +443,7 @@ def fig4_speedup_vs_bufsize(iso: pd.DataFrame, outdir: Path):
     ax.set_xticklabels([str(b) for b in bufsizes])
     ax.set_xlabel("Buffer size (samples)")
     ax.set_ylabel("Speedup ($\\times$)")
-    ax.set_title("\\texttt{BNNSGraph} speedup over \\texttt{RTNeural-XSIMD}", fontsize=8)
+    ax.set_title(f"{_tt('BNNSGraph')} speedup over {_tt('RTNeural-XSIMD')}", fontsize=8)
     ax.axhline(y=1, color="grey", linestyle="--", linewidth=0.6, alpha=0.5)
     ax.legend(fontsize=7, loc="upper left", frameon=True)
     ax.grid(alpha=0.3)
@@ -512,6 +542,13 @@ def fig_bnns_best_128(cont: pd.DataFrame, outdir: Path):
     main_rows = _bnns_worst_case_rows(data, BNNS_BACKENDS_MAIN)
     async_rows = _bnns_worst_case_rows(data, BNNS_BACKENDS_ASYNC)
 
+    # A run may cover a subset of the built-in models or backends; draw what
+    # is present instead of assuming the full catalog.
+    models = [m for m in BNNS_MODELS if m in set(data["model"])]
+    if not models or main_rows.empty:
+        print("  Paper Fig BNNS-128: SKIPPED (no rows for the on-thread backends)")
+        return
+
     fig, (ax1, ax2) = plt.subplots(
         1,
         2,
@@ -520,53 +557,61 @@ def fig_bnns_best_128(cont: pd.DataFrame, outdir: Path):
         gridspec_kw={"width_ratios": [1.75, 1.15]},
     )
 
-    x = np.arange(len(BNNS_MODELS))
+    x = np.arange(len(models))
     width = 0.34
 
-    for i, backend in enumerate(BNNS_BACKENDS_MAIN):
+    def _bars_for(ax, all_rows, backend, offset, bar_width, **style):
+        if all_rows.empty:
+            return
         rows = (
-            main_rows[main_rows["backend"] == backend]
+            all_rows[all_rows["backend"] == backend]
             .set_index("model")
-            .loc[BNNS_MODELS]
+            .reindex(models)
             .reset_index()
         )
-        vals = rows["util_p99"].to_numpy()
-        bars = ax1.bar(
-            x + (i - 0.5) * width,
-            vals,
-            width=width,
+        vals = rows["util_p99"].to_numpy(dtype=float)
+        present = ~np.isnan(vals)
+        if not present.any():
+            return
+        bars = ax.bar(
+            x[present] + offset,
+            vals[present],
+            width=bar_width,
+            label=BNNS_BACKEND_LABELS[backend],
+            **style,
+        )
+        _bnns_annotate_bars(ax, bars, vals[present], rows[present], async_panel=ax is ax2)
+
+    for i, backend in enumerate(BNNS_BACKENDS_MAIN):
+        _bars_for(
+            ax1,
+            main_rows,
+            backend,
+            (i - 0.5) * width,
+            width,
             color=BNNS_BACKEND_COLORS[backend],
             edgecolor=".25",
             linewidth=0.6,
-            label=BNNS_BACKEND_LABELS[backend],
         )
-        _bnns_annotate_bars(ax1, bars, vals, rows)
 
     async_width = 0.30
     for i, backend in enumerate(BNNS_BACKENDS_ASYNC):
-        rows = (
-            async_rows[async_rows["backend"] == backend]
-            .set_index("model")
-            .loc[BNNS_MODELS]
-            .reset_index()
-        )
-        vals = rows["util_p99"].to_numpy()
-        bars = ax2.bar(
-            x + (i - 0.5) * async_width,
-            vals,
-            width=async_width,
+        _bars_for(
+            ax2,
+            async_rows,
+            backend,
+            (i - 0.5) * async_width,
+            async_width,
             color=BNNS_BACKEND_COLORS[backend],
             edgecolor=".35",
             linewidth=0.6,
             hatch="//" if backend == "Anira_ONNX" else None,
-            label=BNNS_BACKEND_LABELS[backend],
         )
-        _bnns_annotate_bars(ax2, bars, vals, rows, async_panel=True)
 
     for ax in (ax1, ax2):
         ax.axhline(100, color="red", linestyle="--", linewidth=0.9, alpha=0.75)
         ax.set_xticks(x)
-        ax.set_xticklabels([BNNS_MODEL_LABELS[m] for m in BNNS_MODELS])
+        ax.set_xticklabels([BNNS_MODEL_LABELS[m] for m in models])
         ax.set_ylim(0, 170)
         ax.grid(axis="y", alpha=0.25)
         ax.grid(axis="x", visible=False)
@@ -661,6 +706,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def run(args: argparse.Namespace) -> int:
+    _load_plot_dependencies()
     _configure_backend(args.pgf)
 
     iso = pd.read_csv(args.isolated)
@@ -679,7 +725,9 @@ def run(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Generate DAFx-26 paper figures")
+    parser = argparse.ArgumentParser(
+        description="Generate DAFx-26 paper figures", allow_abbrev=False
+    )
     add_arguments(parser)
     return run(parser.parse_args(argv))
 

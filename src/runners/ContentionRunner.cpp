@@ -45,8 +45,8 @@ std::vector<std::string> ContentionRunner::rtSafeBackendNames() const
 // scenario.build(), and the CSV sweep columns come from scenario.csvColumns().
 // ---------------------------------------------------------------------------
 ConfigResult ContentionRunner::runSingleConfig(
-    FILE* csvFile, nab::Scenario& scenario, BackendType backend,
-    ModelType model, ModelSize size, int bufferSize, int sweepValue, int rep,
+    FILE* csvFile, nab::Scenario& scenario, const std::string& backend,
+    const ModelSpec& model, int bufferSize, int sweepValue, int rep,
     std::string& failStatus, std::string& failReason)
 {
     using namespace tracktion::engine;
@@ -72,9 +72,11 @@ ConfigResult ContentionRunner::runSingleConfig(
     const char* dimension = scenario.id();
     int contentionLevel = 0, instanceCount = 1;
     scenario.csvColumns(sweepValue, contentionLevel, instanceCount);
+    const auto modelName = modelArchDisplayName(model);
+    const auto sizeName = modelSizeDisplayName(model);
 
     fprintf(stderr, "  %s: %s/%s/%s buf=%d contention=%d instances=%d rep=%d\n",
-            dimension, backendTypeName(backend), modelTypeName(model), modelSizeName(size),
+            dimension, backend.c_str(), modelName.c_str(), sizeName.c_str(),
             bufferSize, contentionLevel, instanceCount, rep);
 
     // --- Configure audio device for this buffer size ---
@@ -110,7 +112,7 @@ ConfigResult ContentionRunner::runSingleConfig(
     edit->getMasterVolumePlugin()->setVolumeDb(0.0f);
 
     SessionTimingInfo timing =
-        scenario.build(*edit, builder, backend, model, size, sweepValue, cfg, cfg.sampleRate);
+        scenario.build(*edit, builder, backend, model, sweepValue, cfg, cfg.sampleRate);
 
     if (!timing.neuralLogger)
     {
@@ -239,8 +241,8 @@ ConfigResult ContentionRunner::runSingleConfig(
     int inferenceUnderruns = timing.getTotalInferenceUnderruns();
 
     // Print neural row (includes hw_xruns and thread_count)
-    CSVOutput::printContentionRow(csvFile, dimension, backendTypeName(backend),
-                                   modelTypeName(model), modelSizeName(size), actualBS,
+    CSVOutput::printContentionRow(csvFile, dimension, backend.c_str(),
+                                   modelName.c_str(), sizeName.c_str(), actualBS,
                                    contentionLevel, instanceCount, rep, neuralStats,
                                    hwXruns, inferenceUnderruns, threadCount);
 
@@ -249,8 +251,8 @@ ConfigResult ContentionRunner::runSingleConfig(
     {
         auto cbStats = TimingStats::compute(callbackDurations, deadline_ns);
         std::string cbDim = std::string(dimension) + "_cb";
-        CSVOutput::printContentionRow(csvFile, cbDim.c_str(), backendTypeName(backend),
-                                       modelTypeName(model), modelSizeName(size), actualBS,
+        CSVOutput::printContentionRow(csvFile, cbDim.c_str(), backend.c_str(),
+                                       modelName.c_str(), sizeName.c_str(), actualBS,
                                        contentionLevel, instanceCount, rep, cbStats,
                                        hwXruns, inferenceUnderruns, threadCount);
 
@@ -299,78 +301,85 @@ void ContentionRunner::runAll(FILE* csvFile)
         const auto bufferSizes = scenario.bufferSizes(cfg);
         const auto sweepValues = scenario.sweepValues(cfg);
 
-        for (int si = 0; si < static_cast<int>(ModelSize::COUNT); si++)
+        for (const auto* model : nab::benchmarkModelOrder(specs))
         {
-            auto size = static_cast<ModelSize>(si);
-            if (!cfg.isSizeEnabled(size)) continue;
+            if (!cfg.isSizeEnabled(model->size) || !cfg.isModelEnabled(model->arch))
+                continue;
 
-            for (int mi = 0; mi < static_cast<int>(ModelType::COUNT); mi++)
+            for (const auto& backendName : backendNames)
             {
-                auto model = static_cast<ModelType>(mi);
-                if (!cfg.isModelEnabled(model)) continue;
+                if (!cfg.isBackendEnabled(backendName)) continue;
 
-                // Same catalog check as IsolatedRunner: skip size/model pairs
-                // with no ModelSpec (the old code discovered this later, when
-                // the neural plugin failed to attach — CSV output is identical).
-                if (nab::findModelSpec(specs, model, size) == nullptr)
+                auto supportProbe = BackendRegistry::instance().create(backendName);
+                std::string whyNot;
+                if (!supportProbe || !supportProbe->supports(*model, whyNot))
                 {
-                    fprintf(stderr, "  SKIP %s/%s: no model spec available\n",
-                            modelTypeName(model), modelSizeName(size));
-                    continue;
-                }
-
-                for (const auto& backendName : backendNames)
-                {
-                    BackendType backend;
-                    if (!backendTypeFromName(backendName, backend)) continue;
-                    if (!cfg.isBackendEnabled(backend)) continue;
-
                     for (auto bufSize : bufferSizes)
                     {
                         for (auto sweepValue : sweepValues)
                         {
                             for (int rep = 1; rep <= cfg.contentionReps; rep++)
                             {
-                                // Retry transient failures (transport hiccups,
-                                // missing timing data — the audio graph not yet
-                                // settled), letting the device recover between
-                                // attempts. Permanent failures and successes
-                                // break immediately. This makes long sweeps
-                                // robust to occasional CoreAudio transients
-                                // without affecting a successful measurement.
-                                constexpr int kMaxAttempts = 3;
-                                constexpr int kRetrySettleMs = 3000;
-                                std::string failStatus, failReason;
-                                ConfigResult result = ConfigResult::PermanentFailure;
-                                for (int attempt = 1; attempt <= kMaxAttempts; attempt++)
+                                int cl = 0, ic = 1;
+                                scenario.csvColumns(sweepValue, cl, ic);
+                                CSVOutput::printContentionStatusRow(
+                                    csvFile, "skipped", whyNot.empty() ? "backend unavailable" : whyNot,
+                                    scenario.id(), backendName.c_str(),
+                                    modelArchDisplayName(*model).c_str(),
+                                    modelSizeDisplayName(*model).c_str(),
+                                    bufSize, cl, ic, rep);
+                            }
+                        }
+                    }
+                    continue;
+                }
+
+                for (auto bufSize : bufferSizes)
+                {
+                    for (auto sweepValue : sweepValues)
+                    {
+                        for (int rep = 1; rep <= cfg.contentionReps; rep++)
+                        {
+                            // Retry transient failures (transport hiccups,
+                            // missing timing data — the audio graph not yet
+                            // settled), letting the device recover between
+                            // attempts. Permanent failures and successes
+                            // break immediately. This makes long sweeps
+                            // robust to occasional CoreAudio transients
+                            // without affecting a successful measurement.
+                            constexpr int kMaxAttempts = 3;
+                            constexpr int kRetrySettleMs = 3000;
+                            std::string failStatus, failReason;
+                            ConfigResult result = ConfigResult::PermanentFailure;
+                            for (int attempt = 1; attempt <= kMaxAttempts; attempt++)
+                            {
+                                result = runSingleConfig(csvFile, scenario, backendName, *model,
+                                                         bufSize, sweepValue, rep,
+                                                         failStatus, failReason);
+                                if (result != ConfigResult::TransientFailure)
+                                    break;
+                                if (attempt < kMaxAttempts)
                                 {
-                                    result = runSingleConfig(csvFile, scenario, backend, model,
-                                                             size, bufSize, sweepValue, rep,
-                                                             failStatus, failReason);
-                                    if (result != ConfigResult::TransientFailure)
-                                        break;
-                                    if (attempt < kMaxAttempts)
-                                    {
-                                        fprintf(stderr,
-                                                "    RETRY %d/%d after transient failure (%s); "
-                                                "settling %dms\n",
-                                                attempt, kMaxAttempts - 1, failReason.c_str(),
-                                                kRetrySettleMs);
-                                        juce::MessageManager::getInstance()
-                                            ->runDispatchLoopUntil(kRetrySettleMs);
-                                    }
+                                    fprintf(stderr,
+                                            "    RETRY %d/%d after transient failure (%s); "
+                                            "settling %dms\n",
+                                            attempt, kMaxAttempts - 1, failReason.c_str(),
+                                            kRetrySettleMs);
+                                    juce::MessageManager::getInstance()
+                                        ->runDispatchLoopUntil(kRetrySettleMs);
                                 }
-                                if (result != ConfigResult::Ok)
-                                {
-                                    int cl = 0, ic = 1;
-                                    scenario.csvColumns(sweepValue, cl, ic);
-                                    CSVOutput::printContentionStatusRow(
-                                        csvFile, failStatus.c_str(), failReason,
-                                        scenario.id(), backendTypeName(backend),
-                                        modelTypeName(model), modelSizeName(size),
-                                        bufSize, cl, ic, rep);
-                                    fflush(csvFile);
-                                }
+                            }
+                            if (result != ConfigResult::Ok)
+                            {
+                                int cl = 0, ic = 1;
+                                scenario.csvColumns(sweepValue, cl, ic);
+                                CSVOutput::printContentionStatusRow(
+                                    csvFile, failStatus.c_str(), failReason,
+                                    scenario.id(), backendName.c_str(),
+                                    modelArchDisplayName(*model).c_str(),
+                                    modelSizeDisplayName(*model).c_str(),
+                                    bufSize, cl, ic, rep);
+                                fflush(csvFile);
                             }
                         }
                     }

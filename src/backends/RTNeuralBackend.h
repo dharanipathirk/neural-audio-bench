@@ -33,7 +33,9 @@
 // (WaveNet) that ModelT cannot express.
 //
 // NOTE: Changing model sizes requires recompiling. The sizes below must match
-// the values in benchmark_config.json.
+// the `models` section of the config that exported the manifest, and the
+// compiled-topology table in RTNeuralTopology.cpp, which supports() checks
+// against each manifest entry so a mismatched model is skipped, not mislabeled.
 // ---------------------------------------------------------------------------
 
 // ===================== LSTM =====================

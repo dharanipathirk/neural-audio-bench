@@ -40,10 +40,10 @@
     },
     "contention": {
       "type": "object",
-      "required": ["buffer_sizes", "contention_levels", "instance_counts", "warmup_callbacks", "warmup_min_seconds", "measure_seconds", "num_reps", "num_tracks"],
+      "required": ["buffer_sizes", "contention_levels", "instance_counts", "neural_track_depths", "use_system_au", "warmup_callbacks", "warmup_min_seconds", "measure_seconds", "num_reps", "num_tracks"],
       "properties": {
         "buffer_sizes": { "$ref": "#/$defs/bufferSizes" },
-        "contention_levels": { "type": "array", "items": { "type": "integer", "minimum": 0 } },
+        "contention_levels": { "type": "array", "items": { "type": "integer", "minimum": 0 }, "description": "Requested conventional-track counts for built-in Dimension A. The paper's fixed system-AU layout clamps these to 23; values 24 and 36 are retained as historical labels." },
         "instance_counts": { "type": "array", "items": { "type": "integer", "minimum": 1 } },
         "neural_track_depths": { "type": "array", "items": { "type": "integer", "minimum": 1 } },
         "use_system_au": { "type": "boolean" },
@@ -51,23 +51,35 @@
         "warmup_min_seconds": { "type": "number", "minimum": 0 },
         "measure_seconds": { "type": "number", "exclusiveMinimum": 0 },
         "num_reps": { "type": "integer", "minimum": 1 },
-        "num_tracks": { "type": "integer", "minimum": 1 }
+        "num_tracks": { "type": "integer", "minimum": 15, "description": "Track count for the custom-DSP Dimension A fallback; track index 15 hosts the neural model. The paper's fixed system-AU layout always has 36 tracks." }
       }
     },
     "backends": {
       "type": "object",
-      "description": "Backend name -> enabled. Names must match registered backend names; unknown names are rejected at load time.",
+      "description": "Backend name -> enabled. A name is used when it matches a backend registered in the selected engine binary; this permits third-party backends without changing the schema.",
       "patternProperties": {
         "^_": {},
         "^[A-Za-z]": { "type": "boolean" }
-      }
+      },
+      "additionalProperties": false
     },
     "model_sizes": {
       "type": "object",
+      "description": "Optional size-tier selectors. Manifest tiers absent here default to enabled.",
       "patternProperties": {
         "^_": {},
         "^[A-Za-z]": { "type": "boolean" }
-      }
+      },
+      "additionalProperties": false
+    },
+    "model_types": {
+      "type": "object",
+      "description": "Optional architecture selectors. Manifest architectures absent here default to enabled.",
+      "patternProperties": {
+        "^_": {},
+        "^[A-Za-z]": { "type": "boolean" }
+      },
+      "additionalProperties": false
     },
     "custom_scenarios": {
       "type": "array",
@@ -146,7 +158,7 @@
     "bufferSizes": {
       "type": "array",
       "minItems": 1,
-      "items": { "type": "integer", "minimum": 1, "maximum": 8192 }
+      "items": { "type": "integer", "minimum": 1, "maximum": 2048 }
     },
     "sizeTiers": {
       "type": "object",

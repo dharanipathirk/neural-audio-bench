@@ -39,6 +39,20 @@ def load_isolated(path: str) -> pd.DataFrame:
     return df
 
 
+def logical_throughput_rows(isolated: pd.DataFrame) -> pd.DataFrame:
+    """Return one throughput row per backend/model/size configuration.
+
+    ``nab run`` merges the two engine binaries' CSVs without duplicating the
+    backends they share, so current runs already have one row per
+    configuration. A CSV merged by simple concatenation carries a second
+    physical row for each shared backend; this keeps the first one.
+    """
+    throughput = isolated[isolated["mode"] == "throughput"]
+    return throughput.drop_duplicates(
+        subset=["backend", "model", "model_size", "buffer_size", "rep"], keep="first"
+    )
+
+
 def load_contention(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Load and enrich contention benchmark CSV.
 
@@ -98,7 +112,7 @@ def print_summary(isolated: pd.DataFrame):
     print("=" * 70)
 
     # Throughput summary
-    throughput = isolated[isolated["mode"] == "throughput"]
+    throughput = logical_throughput_rows(isolated)
     if not throughput.empty:
         print("\n--- Throughput (x realtime) ---")
         for _, row in throughput.iterrows():
@@ -276,12 +290,20 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def run(args: argparse.Namespace) -> int:
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    def derived_path(label: str) -> Path:
+        suffix = output.suffix or ".csv"
+        stem = output.stem if output.suffix else output.name
+        return output.with_name(f"{stem}_{label}{suffix}")
+
     if Path(args.isolated).exists():
         isolated = load_isolated(args.isolated)
         print_summary(isolated)
 
         # Save enriched data
-        out_path = args.output.replace(".csv", "_isolated.csv")
+        out_path = derived_path("isolated")
         isolated.to_csv(out_path, index=False)
         print(f"\nEnriched isolated data saved to: {out_path}")
     else:
@@ -293,18 +315,18 @@ def run(args: argparse.Namespace) -> int:
         print_contention_summary(df_neural, df_cb)
 
         # Save enriched contention data
-        cont_path = args.output.replace(".csv", "_contention.csv")
+        cont_path = derived_path("contention")
         pd.concat([df_neural, df_cb], ignore_index=True).to_csv(cont_path, index=False)
         print(f"\nEnriched contention data (all rows) saved to: {cont_path}")
 
-        cb_path = args.output.replace(".csv", "_contention_cb.csv")
+        cb_path = derived_path("contention_cb")
         df_cb.to_csv(cb_path, index=False)
         print(f"Callback-only contention data saved to: {cb_path}")
 
         if isolated is not None:
             degradation = compute_degradation(isolated, df_neural)
             if not degradation.empty:
-                deg_path = args.output.replace(".csv", "_degradation.csv")
+                deg_path = derived_path("degradation")
                 degradation.to_csv(deg_path, index=False)
                 print(f"Degradation data saved to: {deg_path}")
     else:
@@ -314,7 +336,7 @@ def run(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Analyze benchmark results")
+    parser = argparse.ArgumentParser(description="Analyze benchmark results", allow_abbrev=False)
     add_arguments(parser)
     return run(parser.parse_args(argv))
 

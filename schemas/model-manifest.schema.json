@@ -41,7 +41,19 @@
           "notes": { "type": "string" }
         },
         "patternProperties": { "^_": {} },
-        "additionalProperties": false
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "formats": { "required": ["rtneural"] }
+              }
+            },
+            "then": {
+              "required": ["param_count", "hyperparams"]
+            }
+          }
+        ]
       }
     }
   },

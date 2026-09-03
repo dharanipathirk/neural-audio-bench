@@ -11,6 +11,13 @@
 | [uv](https://docs.astral.sh/uv/) | Python environment + `nab` CLI |
 | ~3 GB disk | Fetched dependencies (JUCE, Tracktion, LibTorch, ONNX Runtime) + build |
 
+An 8 GB machine can install and build the project, but is likely to swap during
+the full isolated sweep and should not be used for trustworthy timings.
+**16 GB RAM is the practical minimum; 24 GB or more is recommended.** The
+isolated runner deliberately pre-generates a long varied input stream, which
+can approach 4.5 GB for a 1024-sample callback configuration before model
+runtimes and the build are counted.
+
 ## Contention mode only: BlackHole
 
 The contention benchmark plays real DAW sessions through
@@ -44,9 +51,10 @@ audible noise). Isolated mode needs no audio device at all.
 - Runtime for the full paper configuration is several hours; use
   `nab estimate` to predict it from your config before committing.
 
-## CI limitations
+## Smoke run
 
-GitHub's macOS ARM runners build everything and run the isolated smoke
-benchmark, but they are shared, thermally uncontrolled machines with no
-BlackHole driver — contention results from CI would be meaningless. The
-contention suite is validated on reference hardware for each release.
+`configs/smoke.json` runs the isolated benchmark on the small models in a
+couple of minutes and verifies the toolchain, models, and both engine
+binaries without an audio device. It is a functional check, not a
+measurement; the contention suite is validated on reference hardware for
+each release.

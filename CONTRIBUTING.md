@@ -25,21 +25,25 @@ additionally needs [BlackHole](https://github.com/ExistentialAudio/BlackHole)
 
 The measurement core produced published results. Changes to timing loops,
 warmup/trim protocol, statistics, or compile flags shift the numbers and
-require re-baselining against `experiments/dafx26-paper/expected/`:
+must be re-baselined against a run made with the previous code on the
+same machine:
 
 - **Behavior-neutral changes** (new backends, scenarios, docs, CLI): normal
   PR flow.
 - **Measurement-affecting changes**: state this explicitly in the PR, run
   the isolated suite before/after on the same machine, and include both
-  CSVs. CI cannot do this — real hardware and thermal control are required.
+  CSVs. Real hardware and thermal control are required for this.
 
 ## Extending the suite
 
 - **New backend**: implement `InferenceBackend`, register it, and it
   appears in config/CLI/results automatically — see `docs/adding-a-backend.md`.
 - **New model**: add a manifest entry pointing at your exported files —
-  see `docs/adding-a-model.md`. RTNeural requires a rebuild (compile-time
-  templates); all other backends load models at runtime.
+  see `docs/adding-a-model.md`. All backends except RTNeural load models at
+  runtime; RTNeural only runs the nine topologies compiled into
+  `src/backends/RTNeuralBackend.h` and reports any other entry as
+  unsupported, so a new size for it means adding a template variant and
+  rebuilding.
 - **New contention scenario**: a JSON track layout covers most cases;
   C++ `Scenario` subclasses handle the rest — see `docs/adding-a-scenario.md`.
 
@@ -57,10 +61,28 @@ require re-baselining against `experiments/dafx26-paper/expected/`:
 
 ## Tests
 
-`ctest --test-dir build` for C++ units; `uv run pytest` for Python.
-CI builds both binaries, runs the unit suites, and executes an isolated
-smoke benchmark. Contention mode cannot run in CI (needs BlackHole and
-controlled thermals) — it is validated on reference hardware per release.
+`ctest --test-dir build` for C++ units; `uv run pytest` for Python. There is
+no hosted CI: run the release checks below locally before opening a PR.
+Contention mode needs BlackHole and controlled thermals and is validated on
+reference hardware per release.
+
+## Release checks
+
+From the repository root, after `uv run nab export` and a build:
+
+```bash
+uv lock --check
+uv run ruff check python tests
+uv run ruff format --check python tests
+uv run pre-commit run --all-files
+uv run pytest
+cmake --build --preset default
+ctest --test-dir build --output-on-failure
+uv run nab validate-config --config configs/base.json
+./build/nab-engine --mode isolated --config configs/smoke.json --output /tmp/nab-smoke-eigen.csv
+./build/nab-engine-xsimd --mode isolated --config configs/smoke.json --output /tmp/nab-smoke-xsimd.csv
+uv run python -m neural_audio_bench.validate_results /tmp/nab-smoke-eigen.csv /tmp/nab-smoke-xsimd.csv
+```
 
 ## License
 

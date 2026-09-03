@@ -221,7 +221,7 @@ void StereoDelay::reset()
 // Tracktion Engine plugin wrappers
 // ---------------------------------------------------------------------------
 
-namespace tracktion { namespace engine {
+namespace tracktion { inline namespace engine {
 
 // EQ
 const char* ContentionEQPlugin::xmlTypeName = "contentionEQ";

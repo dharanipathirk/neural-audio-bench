@@ -23,9 +23,14 @@ juce::File TracktionPlaybackTest::createNoiseWavFile(double durationSeconds, dou
     wavFile.deleteFile();
 
     juce::WavAudioFormat wavFormat;
-    std::unique_ptr<juce::AudioFormatWriter> writer(
-        wavFormat.createWriterFor(new juce::FileOutputStream(wavFile),
-                                   sampleRate, 1, 16, {}, 0));
+    std::unique_ptr<juce::OutputStream> stream =
+        std::make_unique<juce::FileOutputStream>(wavFile);
+    auto writer = wavFormat.createWriterFor(
+        stream,
+        juce::AudioFormatWriterOptions{}
+            .withSampleRate(sampleRate)
+            .withNumChannels(1)
+            .withBitsPerSample(16));
     if (writer)
         writer->writeFromAudioSampleBuffer(buffer, 0, numSamples);
 

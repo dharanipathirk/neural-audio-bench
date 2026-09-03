@@ -40,7 +40,7 @@ public:
     }
 
     SessionTimingInfo build(te::Edit& edit, EditBuilder& builder,
-                            BackendType backend, ModelType model, ModelSize size,
+                            const std::string& backend, const ModelSpec& model,
                             int sweepValue, const BenchmarkRuntimeConfig& cfg,
                             double sampleRate) override;
 
@@ -53,7 +53,7 @@ public:
 private:
     // Custom-DSP fallback layout (the original EditBuilder::buildDimensionA).
     SessionTimingInfo buildCustomDsp(te::Edit& edit, EditBuilder& builder,
-                                     BackendType backend, ModelType model, ModelSize size,
+                                     const std::string& backend, const ModelSpec& model,
                                      int activeTracks, double sampleRate, int numTracks);
 
     SystemAuSessionBuilder auBuilder;

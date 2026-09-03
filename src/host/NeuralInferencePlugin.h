@@ -14,7 +14,7 @@
 // AniraLibTorchHandlerPlugin, AniraOnnxHandlerPlugin). The concrete inference
 // engine is supplied as an InferenceBackend via setBackend().
 // ---------------------------------------------------------------------------
-namespace tracktion { namespace engine {
+namespace tracktion { inline namespace engine {
 
 class NeuralInferencePlugin : public Plugin
 {

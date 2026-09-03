@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Dharanipathi Rathna Kumar Balasubramaniam
 """
 Format exporters: CoreML (.mlpackage + compiled .mlmodelc), RTNeural JSON,
-ONNX (explicit-state LSTM / internal-state conv), and TorchScript.
+ONNX (explicit-state LSTM / stateless conv), and TorchScript.
 """
 
 import json
@@ -17,7 +17,16 @@ from .models import count_params
 
 
 def export_coreml(model, name, states, out_dir):
-    """Export to CoreML .mlpackage with stateful buffers and variable seq_len."""
+    """Export to CoreML .mlpackage with stateful buffers and variable seq_len.
+
+    Compute precision is fp16 and cannot be raised: CoreML state tensors must
+    be fp16 (coremltools rejects fp32 state with "State only support fp16
+    dtype"), and fp16 is also coremltools' mlprogram default. BNNSGraph
+    therefore executes every weight and activation in half precision, unlike
+    the fp32 ONNX/TorchScript/RTNeural paths; the manifest notes record this.
+    """
+    compute_precision = ct.precision.FLOAT16
+
     model.eval()
     # Trace at size 1 -- tracing at larger sizes bakes in concrete shapes
     # that break RangeDim.  TracerWarning about mismatched outputs between
@@ -32,6 +41,7 @@ def export_coreml(model, name, states, out_dir):
         outputs=[ct.TensorType(name="y")],
         states=states,
         convert_to="mlprogram",
+        compute_precision=compute_precision,
         compute_units=ct.ComputeUnit.CPU_ONLY,
         minimum_deployment_target=ct.target.macOS15,
     )
@@ -172,8 +182,9 @@ def export_onnx_lstm(model, name, out_dir):
 def export_onnx_conv(model, name, out_dir):
     """Export TCN/WaveNet to ONNX with dynamic sequence dimension.
 
-    State is managed internally by the model (registered buffers).
-    The ONNX graph includes the state update operations.
+    Registered PyTorch convolution buffers are not mutable ONNX state, so
+    these exports are intentionally stateless. The manifest records this
+    asymmetry; stateful convolution would require explicit state I/O.
     """
     model.eval()
     for _buf_name, buf in model.named_buffers():

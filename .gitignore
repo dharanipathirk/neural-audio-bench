@@ -22,17 +22,16 @@ cmake_install.cmake
 Makefile
 compile_commands.json
 
-# Generated code
-src/backends/RTNeuralCatalog.generated.h
-
 # Generated model artifacts (regenerate with `nab export`, or fetch from a GitHub Release)
 models/
 
 # Benchmark outputs
 results/
 runs/
-analysis/amx_results/
 microarch/results/
+tools/rtsan-bnns-test/SimpleAudioMLP.mlmodelc/
+tools/rtsan-bnns-test/SimpleAudioMLP.mlpackage/
+tools/rtsan-bnns-test/test_bnns_rt
 
 # Logs
 *.log

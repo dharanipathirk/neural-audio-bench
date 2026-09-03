@@ -11,25 +11,22 @@
 // Shared neural-plugin attach (used by EditBuilder and the scenario session
 // builders, e.g. SystemAuSessionBuilder).
 // ---------------------------------------------------------------------------
-TimingLogger* attachNeuralPlugin(te::AudioTrack& track, BackendType backend,
-                                 const ModelSpec* spec, const juce::String& pluginName,
+TimingLogger* attachNeuralPlugin(te::AudioTrack& track, const std::string& backend,
+                                 const ModelSpec& spec, const juce::String& pluginName,
                                  SessionTimingInfo& sessionInfo)
 {
-    if (spec == nullptr)
-        return nullptr;
-
     auto plugin = track.edit.getPluginCache().createNewPlugin(
         te::NeuralInferencePlugin::xmlTypeName, {});
     auto* p = dynamic_cast<te::NeuralInferencePlugin*>(plugin.get());
     if (p == nullptr)
         return nullptr;
 
-    auto backendImpl = BackendRegistry::instance().create(backendTypeName(backend));
+    auto backendImpl = BackendRegistry::instance().create(backend);
     if (!backendImpl)
         return nullptr;
 
     p->setBackend(std::move(backendImpl));
-    p->setModelSpec(*spec);
+    p->setModelSpec(spec);
     p->setPluginName(pluginName);
     track.pluginList.insertPlugin(plugin, 0, nullptr);
 
@@ -75,9 +72,14 @@ void EditBuilder::ensureNoiseWavFile(double durationSeconds, double sampleRate)
     noiseWavFile.deleteFile();
 
     juce::WavAudioFormat wavFormat;
-    std::unique_ptr<juce::AudioFormatWriter> writer(
-        wavFormat.createWriterFor(new juce::FileOutputStream(noiseWavFile),
-                                   sampleRate, 1, 16, {}, 0));
+    std::unique_ptr<juce::OutputStream> stream =
+        std::make_unique<juce::FileOutputStream>(noiseWavFile);
+    auto writer = wavFormat.createWriterFor(
+        stream,
+        juce::AudioFormatWriterOptions{}
+            .withSampleRate(sampleRate)
+            .withNumChannels(1)
+            .withBitsPerSample(16));
     if (writer)
         writer->writeFromAudioSampleBuffer(buffer, 0, numSamples);
 
@@ -122,34 +124,23 @@ void EditBuilder::addConventionalDSP(te::AudioTrack& track, double clipDuration)
     track.pluginList.insertPlugin(compPlugin, -1, nullptr);
 }
 
-TimingLogger* EditBuilder::addNeuralPlugin(te::AudioTrack& track, BackendType backend,
-                                            ModelType model, ModelSize size, double clipDuration,
+TimingLogger* EditBuilder::addNeuralPlugin(te::AudioTrack& track, const std::string& backend,
+                                            const ModelSpec& spec, double clipDuration,
                                             SessionTimingInfo& sessionInfo)
 {
     addAudioClip(track, clipDuration);
 
     // Plugin display name — kept byte-identical to the pre-refactor EditBuilder.
-    juce::String name;
-    switch (backend)
-    {
-        case BackendType::BNNSGraph:
-            name = "BNNS_" + juce::String(modelTypeName(model)); break;
-        case BackendType::RTNeural_Eigen:
-        case BackendType::RTNeural_XSIMD:
-            name = "RTNeural_" + juce::String(modelTypeName(model)); break;
-        case BackendType::Direct_LibTorch:
-            name = "DirectLibTorch_" + juce::String(modelTypeName(model)); break;
-        case BackendType::Direct_ONNX:
-            name = "DirectONNX_" + juce::String(modelTypeName(model)); break;
-        case BackendType::Anira_LibTorch:
-            name = "AniraLibTorch_" + juce::String(modelTypeName(model)); break;
-        case BackendType::Anira_ONNX:
-            name = "AniraONNX_" + juce::String(modelTypeName(model)); break;
-        default:
-            break;
-    }
+    const auto modelName = modelArchDisplayName(spec);
+    juce::String prefix = juce::String(backend);
+    if (backend == "BNNSGraph") prefix = "BNNS";
+    else if (backend.rfind("RTNeural_", 0) == 0) prefix = "RTNeural";
+    else if (backend == "Direct_LibTorch") prefix = "DirectLibTorch";
+    else if (backend == "Direct_ONNX") prefix = "DirectONNX";
+    else if (backend == "Anira_LibTorch") prefix = "AniraLibTorch";
+    else if (backend == "Anira_ONNX") prefix = "AniraONNX";
 
-    const ModelSpec* spec = nab::findModelSpec(specs, model, size);
+    const auto name = prefix + "_" + juce::String(modelName);
     return attachNeuralPlugin(track, backend, spec, name, sessionInfo);
 }
 

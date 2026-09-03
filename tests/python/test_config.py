@@ -11,11 +11,10 @@ def test_base_config_validates():
     cfg.validate_config(c)  # must not raise
 
 
-def test_dafx26_preset_validates():
-    path = cfg.resolve_preset_path("dafx26-paper")
-    c = cfg.load_config(path)
+def test_base_config_default_protocol_values():
+    c = cfg.load_config(cfg.default_base_config())
     cfg.validate_config(c)
-    # Frozen paper values — guards against accidental edits to the preset.
+    # The shipped default protocol — guards against accidental edits.
     assert c["isolated"]["min_iterations"] == 10000
     assert c["isolated"]["num_reps"] == 1
     assert c["isolated"]["target_measure_seconds"] == 5.0
@@ -56,3 +55,20 @@ def test_config_sha256_stable_under_key_order():
     a = {"x": 1, "y": {"a": 2, "b": 3}}
     b = {"y": {"b": 3, "a": 2}, "x": 1}
     assert cfg.config_sha256(a) == cfg.config_sha256(b)
+
+
+def test_custom_model_and_backend_selectors_validate():
+    c = cfg.load_config(cfg.default_base_config())
+    c["model_types"] = {"custom_arch": True}
+    c["model_sizes"]["research"] = True
+    c["backends"]["ThirdPartyBackend"] = True
+    cfg.validate_config(c)
+
+
+def test_buffer_larger_than_engine_capacity_rejected():
+    import jsonschema
+
+    c = cfg.load_config(cfg.default_base_config())
+    c["isolated"]["buffer_sizes"] = [4096]
+    with pytest.raises(jsonschema.ValidationError):
+        cfg.validate_config(c)

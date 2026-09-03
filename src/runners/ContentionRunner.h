@@ -67,9 +67,8 @@ private:
     ConfigResult runSingleConfig(
         FILE* csvFile,
         nab::Scenario& scenario,
-        BackendType backend,
-        ModelType model,
-        ModelSize size,
+        const std::string& backend,
+        const ModelSpec& model,
         int bufferSize,
         int sweepValue,
         int rep,

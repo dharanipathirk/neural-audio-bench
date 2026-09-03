@@ -1,5 +1,5 @@
 {
-  "_comment": "Minimal smoke configuration — runs in a couple of minutes to verify the toolchain, models, and engine all work. Used by CI and as a quick local sanity check.",
+  "_comment": "Minimal smoke configuration — runs in a couple of minutes to verify the toolchain, models, and engine all work. Used as a quick local sanity check and by the release checks.",
 
   "schema_version": 1,
 
@@ -52,7 +52,7 @@
   "backends": {
     "BNNSGraph": true,
     "RTNeural_Eigen": true,
-    "RTNeural_XSIMD": false,
+    "RTNeural_XSIMD": true,
     "Direct_LibTorch": true,
     "Direct_ONNX": true,
     "Anira_LibTorch": false,

@@ -106,7 +106,7 @@ bool OnnxRuntimeEngine::initialize(const std::string& onnxPath)
         }
         else
         {
-            fprintf(stderr, "OnnxRuntimeEngine: Conv model (internal state) %s\n",
+            fprintf(stderr, "OnnxRuntimeEngine: Stateless convolution model %s\n",
                     onnxPath.c_str());
         }
 
@@ -186,7 +186,7 @@ void OnnxRuntimeEngine::processChunk(const float* input, float* output, int numS
     }
     else
     {
-        // TCN/WaveNet: (x) -> (y), state managed internally
+        // TCN/WaveNet: stateless (x) -> (y)
         std::vector<int64_t> xShape = {1, 1, static_cast<int64_t>(numSamples)};
 
         std::vector<Ort::Value> inTensors;
@@ -217,9 +217,7 @@ void OnnxRuntimeEngine::resetState()
         std::fill(hBuf.begin(), hBuf.end(), 0.0f);
         std::fill(cBuf.begin(), cBuf.end(), 0.0f);
     }
-    // For TCN/WaveNet: ONNX state is internal to the model graph.
-    // There's no way to reset it without reloading the session.
-    // This is a known ONNX limitation for stateful conv models.
+    // TCN/WaveNet ONNX exports are stateless, so there is nothing to reset.
 #endif
 }
 

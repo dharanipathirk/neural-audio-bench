@@ -25,6 +25,15 @@ def validate_manifest(manifest: dict) -> None:
     import jsonschema
 
     jsonschema.validate(manifest, load_schema("model-manifest.schema.json"))
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for model in manifest["models"]:
+        model_id = model["id"]
+        if model_id in seen:
+            duplicates.add(model_id)
+        seen.add(model_id)
+    if duplicates:
+        raise ValueError(f"duplicate model id(s): {', '.join(sorted(duplicates))}")
 
 
 def models_root_dir(path: str | Path, manifest: dict) -> Path:

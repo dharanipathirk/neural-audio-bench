@@ -3,21 +3,25 @@
 """
 Estimate benchmark runtime from a resolved configuration.
 
-What this can do exactly:
-- Compute the exact benchmark-controlled wall time for contention mode from the
-  current C++ control flow and config values.
+What this can compute from config:
+- The contention protocol time for successful first attempts: configured
+  warmup, measurement windows, and fixed waits.
 
 What it cannot do from config alone:
 - Compute the exact isolated-mode wall time. Isolated mode adapts its iteration
   count from measured backend speed at runtime, so the true duration depends on
   the machine, binary, backend, model, and buffer size.
+- Predict session construction, Audio Unit scan/device delays, or transient
+  contention retries.
 
 Optional:
 - If you pass an existing isolated CSV from the same machine/binary/config, the
   script can estimate isolated runtime from those measured rows.
 
-Compile-time backend availability is read from ``build/nab_build_info.json`` when
-present, otherwise from the CMake-generated ``flags.make``.
+Compile-time backend availability is read from CMake's generated ``flags.make``.
+Before CMake has been configured, the estimator clearly labels and uses the
+project's default full-build feature set so it remains useful as a planning
+command.
 """
 
 from __future__ import annotations
@@ -26,10 +30,11 @@ import argparse
 import csv
 import json
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from .config import default_base_config, repo_root
+from .config import default_base_config, repo_root, resolve_config
 
 DEFAULT_CONFIG = default_base_config()
 DEFAULT_BUILD_DIR = repo_root() / "build"
@@ -52,6 +57,7 @@ class BuildFeatures:
     has_libtorch: bool
     has_onnx: bool
     has_anira: bool
+    source: str = "CMake flags"
 
 
 @dataclass
@@ -86,51 +92,58 @@ def parse_flags_make(path: Path) -> BuildFeatures:
         has_libtorch=("HAS_LIBTORCH" in defines and "USE_LIBTORCH" in defines),
         has_onnx=("HAS_ONNXRUNTIME" in defines and "USE_ONNXRUNTIME" in defines),
         has_anira=("HAS_ANIRA" in defines),
-    )
-
-
-def build_features_from_info(info: dict, target: str) -> BuildFeatures:
-    """Derive build features from a ``nab_build_info.json`` document.
-
-    Expected shape: ``{"targets": {"<target>": {"HAS_LIBTORCH": true, ...}}}``.
-    """
-    targets = info.get("targets", {})
-    if target not in targets:
-        raise KeyError(f"target '{target}' not present in nab_build_info.json")
-    t = targets[target]
-
-    rt_backend = t.get("rtneural_backend")
-    if not rt_backend:
-        if t.get("RTNEURAL_USE_XSIMD"):
-            rt_backend = "RTNeural_XSIMD"
-        elif t.get("RTNEURAL_USE_EIGEN"):
-            rt_backend = "RTNeural_Eigen"
-    if rt_backend not in ("RTNeural_XSIMD", "RTNeural_Eigen"):
-        raise RuntimeError(f"Could not infer RTNeural variant for target '{target}'")
-
-    return BuildFeatures(
-        rtneural_backend=rt_backend,
-        has_libtorch=bool(t.get("HAS_LIBTORCH")) and bool(t.get("USE_LIBTORCH", True)),
-        has_onnx=bool(t.get("HAS_ONNXRUNTIME")) and bool(t.get("USE_ONNXRUNTIME", True)),
-        has_anira=bool(t.get("HAS_ANIRA")),
+        source=str(path),
     )
 
 
 def infer_build_features(build_dir: Path, target: str) -> BuildFeatures:
-    info_path = build_dir / "nab_build_info.json"
-    if info_path.exists():
-        try:
-            return build_features_from_info(load_json(info_path), target)
-        except (KeyError, RuntimeError, json.JSONDecodeError, OSError):
-            pass  # fall back to flags.make parsing
     flags_make = build_dir / "CMakeFiles" / f"{target}.dir" / "flags.make"
-    return parse_flags_make(flags_make)
+    if flags_make.exists():
+        return parse_flags_make(flags_make)
+
+    rt_backend = "RTNeural_XSIMD" if target == "nab_engine_xsimd" else "RTNeural_Eigen"
+    print(
+        f"WARNING: no configured build metadata found for {target} at {flags_make}; "
+        "assuming the default full build (LibTorch, ONNX Runtime, and anira enabled).",
+        file=sys.stderr,
+    )
+    return BuildFeatures(
+        rtneural_backend=rt_backend,
+        has_libtorch=True,
+        has_onnx=True,
+        has_anira=True,
+        source="unconfigured default full build (assumed)",
+    )
 
 
-def enabled_sizes(cfg: dict) -> list[str]:
-    sizes_cfg = cfg.get("model_sizes", {})
-    ordered = ["small", "medium", "large"]
-    return [s for s in ordered if sizes_cfg.get(s, True)]
+def enabled_model_specs(cfg: dict) -> list[tuple[str, str]]:
+    """Return manifest/config model entries selected by architecture and size."""
+    model_entries: list[tuple[str, str]] = []
+    manifest_value = cfg.get("models_manifest")
+    if manifest_value:
+        manifest_path = Path(manifest_value)
+        if manifest_path.exists():
+            manifest = load_json(manifest_path)
+            model_entries = [
+                (str(item["arch"]), str(item.get("size", "")))
+                for item in manifest.get("models", [])
+            ]
+
+    if not model_entries:
+        for arch, sizes in cfg.get("models", {}).items():
+            if arch.startswith("_") or not isinstance(sizes, dict):
+                continue
+            for size in sizes:
+                if not size.startswith("_"):
+                    model_entries.append((arch, size))
+
+    model_selector = cfg.get("model_types", {})
+    size_selector = cfg.get("model_sizes", {})
+    return [
+        (arch, size)
+        for arch, size in model_entries
+        if model_selector.get(arch, True) and size_selector.get(size, True)
+    ]
 
 
 def enabled_isolated_backends(cfg: dict, features: BuildFeatures) -> list[str]:
@@ -185,57 +198,65 @@ def contention_per_config_seconds(sample_rate: float, buffer_size: int, cfg: dic
 
 def compute_contention_runtime(cfg: dict, features: BuildFeatures) -> dict[str, RuntimeSummary]:
     sample_rate = float(cfg["sample_rate"])
-    models = ["LSTM", "TCN", "WaveNet"]
-    sizes = enabled_sizes(cfg)
+    model_specs = enabled_model_specs(cfg)
     backends = enabled_contention_backends(cfg, features)
     ct = cfg["contention"]
     reps = int(ct["num_reps"])
 
     dim_a_seconds = 0.0
     dim_a_configs = 0
-    for _size in sizes:
-        for _model in models:
-            for _backend in backends:
-                for buffer_size in ct["buffer_sizes"]:
-                    for _level in ct["contention_levels"]:
-                        for _rep in range(reps):
-                            dim_a_configs += 1
-                            dim_a_seconds += contention_per_config_seconds(
-                                sample_rate, int(buffer_size), cfg
-                            )
+    for _model in model_specs:
+        for _backend in backends:
+            for buffer_size in ct["buffer_sizes"]:
+                for _level in ct["contention_levels"]:
+                    for _rep in range(reps):
+                        dim_a_configs += 1
+                        dim_a_seconds += contention_per_config_seconds(
+                            sample_rate, int(buffer_size), cfg
+                        )
 
     dim_b_buffer = 128
     dim_b_per = contention_per_config_seconds(sample_rate, dim_b_buffer, cfg)
-    dim_b_configs = len(sizes) * len(models) * len(backends) * len(ct["instance_counts"]) * reps
+    dim_b_configs = len(model_specs) * len(backends) * len(ct["instance_counts"]) * reps
     dim_b_seconds = dim_b_configs * dim_b_per
 
     dim_c_buffer = 128
     dim_c_per = contention_per_config_seconds(sample_rate, dim_c_buffer, cfg)
-    dim_c_configs = (
-        len(sizes) * len(models) * len(backends) * len(ct.get("neural_track_depths", [])) * reps
-    )
+    dim_c_configs = len(model_specs) * len(backends) * len(ct.get("neural_track_depths", [])) * reps
     dim_c_seconds = dim_c_configs * dim_c_per
 
-    total_configs = dim_a_configs + dim_b_configs + dim_c_configs
-    total_seconds = dim_a_seconds + dim_b_seconds + dim_c_seconds
-
-    return {
+    report = {
         "dim_a": RuntimeSummary(dim_a_configs, dim_a_seconds),
         "dim_b": RuntimeSummary(dim_b_configs, dim_b_seconds),
         "dim_c": RuntimeSummary(dim_c_configs, dim_c_seconds),
-        "total": RuntimeSummary(total_configs, total_seconds),
     }
+
+    for scenario in cfg.get("custom_scenarios", []):
+        scenario_configs = 0
+        scenario_seconds = 0.0
+        for buffer_size in scenario["buffer_sizes"]:
+            count = len(model_specs) * len(backends) * len(scenario["sweep"]["values"]) * reps
+            scenario_configs += count
+            scenario_seconds += count * contention_per_config_seconds(
+                sample_rate, int(buffer_size), cfg
+            )
+        report[str(scenario["id"])] = RuntimeSummary(scenario_configs, scenario_seconds)
+
+    report["total"] = RuntimeSummary(
+        sum(summary.configs for summary in report.values()),
+        sum(summary.seconds for summary in report.values()),
+    )
+    return report
 
 
 def compute_isolated_counts(cfg: dict, features: BuildFeatures) -> dict[str, int]:
-    models = 3
-    sizes = len(enabled_sizes(cfg))
+    models = len(enabled_model_specs(cfg))
     backends = len(enabled_isolated_backends(cfg, features))
     iso = cfg["isolated"]
     num_bufs = len(iso["buffer_sizes"])
     reps = int(iso["num_reps"])
 
-    throughput_runs = models * sizes * backends
+    throughput_runs = models * backends
     callback_reps = throughput_runs * num_bufs * reps
     warmup_probe_groups = throughput_runs * num_bufs
 
@@ -244,7 +265,7 @@ def compute_isolated_counts(cfg: dict, features: BuildFeatures) -> dict[str, int
         "callback_reps": callback_reps,
         "warmup_probe_groups": warmup_probe_groups,
         "active_backends": backends,
-        "active_sizes": sizes,
+        "active_models": models,
     }
 
 
@@ -312,16 +333,17 @@ def print_contention_report(cfg: dict, features: BuildFeatures) -> None:
         f"max({ct['warmup_callbacks']} * buffer / sample_rate, {ct['warmup_min_seconds']}s)"
     )
     print(f"  Measurement time per config: {ct['measure_seconds']}s")
-    print(
-        f"  Dimension A: {report['dim_a'].configs} configs, {fmt_duration(report['dim_a'].seconds)}"
-    )
-    print(
-        f"  Dimension B: {report['dim_b'].configs} configs, {fmt_duration(report['dim_b'].seconds)}"
-    )
-    print(
-        f"  Dimension C: {report['dim_c'].configs} configs, {fmt_duration(report['dim_c'].seconds)}"
-    )
+    for scenario_id, summary in report.items():
+        if scenario_id == "total":
+            continue
+        label = {"dim_a": "Dimension A", "dim_b": "Dimension B", "dim_c": "Dimension C"}.get(
+            scenario_id, f"Custom scenario {scenario_id}"
+        )
+        print(f"  {label}: {summary.configs} configs, {fmt_duration(summary.seconds)}")
     print(f"  Total: {report['total'].configs} configs, {fmt_duration(report['total'].seconds)}")
+    print(
+        "  Note: total is the successful first-attempt protocol time; setup delays and retries vary."
+    )
     if ct.get("use_system_au", False):
         print(
             "  Note: excludes one-time AU scan overhead in Dimension A; "
@@ -336,6 +358,7 @@ def print_isolated_report(cfg: dict, features: BuildFeatures, isolated_csv: Path
 
     print("Isolated")
     print(f"  Active backends: {', '.join(backends) if backends else '(none)'}")
+    print(f"  Active manifest/config model entries: {counts['active_models']}")
     print(f"  Throughput runs (Mode A): {counts['throughput_runs']}")
     print(f"  Callback reps (Mode B): {counts['callback_reps']}")
     print(f"  Warmup+probe groups: {counts['warmup_probe_groups']}")
@@ -365,6 +388,7 @@ def print_isolated_report(cfg: dict, features: BuildFeatures, isolated_csv: Path
 def print_full_run_estimate(
     cfg: dict,
     build_dir: Path,
+    warmup: int,
     cooldown: int,
     isolated_csv: Path | None,
 ) -> None:
@@ -375,6 +399,7 @@ def print_full_run_estimate(
     xsimd_features = infer_build_features(build_dir, "nab_engine_xsimd")
 
     print("Full interleaved run estimate")
+    print(f"  CPU warmup before each phase: {warmup}s")
     print(f"  Cooldown between phases: {cooldown}s")
     print()
 
@@ -407,6 +432,7 @@ def print_full_run_estimate(
             xsimd_iso_est = total_est * xsimd_n / total_n
 
     print("  Phase 1: Eigen isolated (nab_engine)")
+    print(f"    Feature source: {eigen_features.source}")
     eigen_backends = enabled_isolated_backends(cfg, eigen_features)
     print(f"    Backends: {', '.join(eigen_backends)}")
     if eigen_iso_est is not None:
@@ -416,6 +442,7 @@ def print_full_run_estimate(
     print()
 
     print("  Phase 2: XSIMD isolated (nab_engine_xsimd)")
+    print(f"    Feature source: {xsimd_features.source}")
     xsimd_backends = enabled_isolated_backends(cfg, xsimd_features)
     print(f"    Backends: {', '.join(xsimd_backends)}")
     if xsimd_iso_est is not None:
@@ -427,40 +454,40 @@ def print_full_run_estimate(
     print("  Phase 3: XSIMD contention (nab_engine_xsimd)")
     xsimd_ct_backends = enabled_contention_backends(cfg, xsimd_features)
     print(f"    Backends: {', '.join(xsimd_ct_backends)}")
-    print(
-        f"    Dim A: {xsimd_contention['dim_a'].configs} configs, "
-        f"{fmt_duration(xsimd_contention['dim_a'].seconds)}"
-    )
-    print(
-        f"    Dim B: {xsimd_contention['dim_b'].configs} configs, "
-        f"{fmt_duration(xsimd_contention['dim_b'].seconds)}"
-    )
-    print(
-        f"    Dim C: {xsimd_contention['dim_c'].configs} configs, "
-        f"{fmt_duration(xsimd_contention['dim_c'].seconds)}"
-    )
+    for scenario_id, summary in xsimd_contention.items():
+        if scenario_id == "total":
+            continue
+        print(f"    {scenario_id}: {summary.configs} configs, {fmt_duration(summary.seconds)}")
     print(f"    Subtotal: {fmt_duration(xsimd_contention['total'].seconds)}")
     print()
 
-    # Total: 3 phases, 2 cooldowns between them
-    total_cooldown = cooldown * 2
+    # Total: 3 phase warmups and 2 cooldowns between the phases.
+    total_warmup = max(0, warmup) * 3
+    total_cooldown = max(0, cooldown) * 2
     contention_seconds = xsimd_contention["total"].seconds
 
     if eigen_iso_est is not None and xsimd_iso_est is not None:
-        total = eigen_iso_est + xsimd_iso_est + contention_seconds + total_cooldown
+        total = eigen_iso_est + xsimd_iso_est + contention_seconds + total_warmup + total_cooldown
         print(f"  Total (from CSV): {fmt_duration(total)}")
         print(
-            f"    = isolated Eigen {fmt_duration(eigen_iso_est)}"
+            f"    = warmups {fmt_duration(total_warmup)}"
+            f" + isolated Eigen {fmt_duration(eigen_iso_est)}"
             f" + cool {cooldown}s"
             f" + isolated XSIMD {fmt_duration(xsimd_iso_est)}"
             f" + cool {cooldown}s"
             f" + contention {fmt_duration(contention_seconds)}"
         )
     else:
-        budget_total = eigen_iso_budget + xsimd_iso_budget + contention_seconds + total_cooldown
+        budget_total = (
+            eigen_iso_budget + xsimd_iso_budget + contention_seconds + total_warmup + total_cooldown
+        )
         print(f"  Total (nominal): {fmt_duration(budget_total)}")
         print("    Isolated budgets are nominal — actual depends on hardware speed.")
-        print(f"    Contention is exact: {fmt_duration(contention_seconds)}")
+        print(
+            "    Contention first-attempt protocol: "
+            f"{fmt_duration(contention_seconds)} (excludes setup delays and retries)"
+        )
+        print(f"    CPU warmups: 3 x {warmup}s = {fmt_duration(total_warmup)}")
         print(f"    Cooldowns: 2 x {cooldown}s = {fmt_duration(total_cooldown)}")
 
 
@@ -493,6 +520,12 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         help="Optional isolated CSV from a prior run to estimate actual isolated runtime.",
     )
     parser.add_argument(
+        "--warmup",
+        type=int,
+        default=45,
+        help="CPU warmup seconds before each phase in the interleaved runner (default: 45).",
+    )
+    parser.add_argument(
         "--cooldown",
         type=int,
         default=120,
@@ -500,44 +533,54 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--full-run",
+        dest="full_run",
         action="store_true",
+        default=True,
         help=(
-            "Estimate total wall time for the full interleaved run "
+            "Estimate the full interleaved run (default): "
             "(Eigen isolated + XSIMD isolated + XSIMD contention + cooldowns)."
         ),
+    )
+    parser.add_argument(
+        "--single-target",
+        dest="full_run",
+        action="store_false",
+        help="Estimate only --target, for direct engine invocations.",
     )
 
 
 def run(args: argparse.Namespace) -> int:
-    cfg = load_json(args.config)
-    features = infer_build_features(args.build_dir, args.target)
+    if args.warmup < 0 or args.cooldown < 0:
+        print("ERROR: --warmup and --cooldown must be non-negative", file=sys.stderr)
+        return 2
+    cfg = resolve_config(preset=args.config)
 
     print(f"Config:  {args.config}")
     print(f"Build:   {args.build_dir}")
-    print(f"Target:  {args.target}")
-    print(f"RTNeural backend in target: {features.rtneural_backend}")
-    print(
-        "Compiled features: "
-        f"anira={'yes' if features.has_anira else 'no'}, "
-        f"libtorch={'yes' if features.has_libtorch else 'no'}, "
-        f"onnx={'yes' if features.has_onnx else 'no'}"
-    )
-    print()
-
-    print_contention_report(cfg, features)
-    print()
-    print_isolated_report(cfg, features, args.isolated_csv)
 
     if args.full_run:
+        print_full_run_estimate(cfg, args.build_dir, args.warmup, args.cooldown, args.isolated_csv)
+    else:
+        features = infer_build_features(args.build_dir, args.target)
+        print(f"Target:  {args.target}")
+        print(f"Feature source: {features.source}")
+        print(f"RTNeural backend in target: {features.rtneural_backend}")
+        print(
+            "Compiled features: "
+            f"anira={'yes' if features.has_anira else 'no'}, "
+            f"libtorch={'yes' if features.has_libtorch else 'no'}, "
+            f"onnx={'yes' if features.has_onnx else 'no'}"
+        )
         print()
-        print("=" * 60)
-        print_full_run_estimate(cfg, args.build_dir, args.cooldown, args.isolated_csv)
+        print_contention_report(cfg, features)
+        print()
+        print_isolated_report(cfg, features, args.isolated_csv)
 
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     add_arguments(parser)
     return run(parser.parse_args(argv))
 

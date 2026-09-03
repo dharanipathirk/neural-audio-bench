@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Dharanipathi Rathna Kumar Balasubramaniam
 #include "NeuralInferencePlugin.h"
 
-namespace tracktion { namespace engine {
+namespace tracktion { inline namespace engine {
 
 const char* NeuralInferencePlugin::xmlTypeName = "neuralInferencePlugin";
 

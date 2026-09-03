@@ -618,6 +618,7 @@ version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "coremltools" },
+    { name = "jsonschema" },
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "onnx" },
@@ -629,7 +630,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "jsonschema" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "ruff" },
@@ -638,6 +638,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "coremltools", specifier = ">=9.0" },
+    { name = "jsonschema", specifier = ">=4.23" },
     { name = "matplotlib", specifier = ">=3.10.8" },
     { name = "numpy", specifier = ">=2.4.4" },
     { name = "onnx", specifier = ">=1.21.0" },
@@ -649,7 +650,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "jsonschema", specifier = ">=4.23" },
     { name = "pre-commit", specifier = ">=4.0" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "ruff", specifier = ">=0.9" },

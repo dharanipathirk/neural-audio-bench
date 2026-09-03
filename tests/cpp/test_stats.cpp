@@ -7,6 +7,9 @@
 
 #include "TimingLogger.h"
 
+// The benchmark must be built in Release (NDEBUG), which would compile every
+// assert() below out and make this test pass unconditionally. Re-enable them.
+#undef NDEBUG
 #include <cassert>
 #include <cmath>
 #include <cstdio>

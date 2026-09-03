@@ -49,6 +49,8 @@ set(BACKEND_SOURCES
     src/backends/BnnsGraphBackend.mm
     src/backends/RTNeuralBackend.h
     src/backends/RTNeuralBackend.cpp
+    src/backends/RTNeuralTopology.h
+    src/backends/RTNeuralTopology.cpp
     src/backends/LibTorchBackend.h
     src/backends/LibTorchBackend.cpp
     src/backends/OnnxRuntimeBackend.h
@@ -230,6 +232,7 @@ add_executable(nab_test_config
     tests/cpp/test_config_manifest.cpp
     src/core/ModelManifest.cpp
     src/backends/InferenceBackend.cpp
+    src/backends/RTNeuralTopology.cpp
 )
 target_include_directories(nab_test_config PRIVATE
     src
@@ -240,10 +243,10 @@ add_test(NAME config-base
     COMMAND nab_test_config load-config ${CMAKE_CURRENT_SOURCE_DIR}/configs/base.json)
 add_test(NAME config-smoke
     COMMAND nab_test_config load-config ${CMAKE_CURRENT_SOURCE_DIR}/configs/smoke.json)
-add_test(NAME config-paper-values
-    COMMAND nab_test_config check-paper ${CMAKE_CURRENT_SOURCE_DIR}/experiments/dafx26-paper/config.json)
-add_test(NAME manifest-paper
-    COMMAND nab_test_config load-manifest ${CMAKE_CURRENT_SOURCE_DIR}/experiments/dafx26-paper/models.manifest.json)
+add_test(NAME config-default-values
+    COMMAND nab_test_config check-defaults ${CMAKE_CURRENT_SOURCE_DIR}/configs/base.json)
+add_test(NAME manifest-fixture
+    COMMAND nab_test_config load-manifest ${CMAKE_CURRENT_SOURCE_DIR}/tests/data/models.manifest.json)
 add_test(NAME config-incomplete-rejected
     COMMAND nab_test_config load-config ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/data/incomplete-config.json)
 set_tests_properties(config-incomplete-rejected PROPERTIES WILL_FAIL TRUE)

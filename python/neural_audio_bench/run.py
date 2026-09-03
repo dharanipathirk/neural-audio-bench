@@ -3,7 +3,7 @@
 """
 Run the full benchmark suite with thermal fairness.
 
-Ports run_benchmark.sh:
+Orchestrates the benchmark protocol:
   - CPU warmup burn before each phase (reaches thermal steady state)
   - Cooldown between phases (resets to a consistent baseline)
 
@@ -19,15 +19,18 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import csv
 import datetime
+import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-from . import __version__, analyze, plot_figures
+from . import __version__
 from .config import (
     config_sha256,
     default_base_config,
@@ -60,6 +63,18 @@ def _git_head() -> str | None:
     if result.returncode != 0:
         return None
     return result.stdout.strip() or None
+
+
+def _sha256_file(path: str | Path) -> str | None:
+    """Return a file digest, or ``None`` when the path is absent/not a file."""
+    path = Path(path)
+    if not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for block in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 class Logger:
@@ -132,17 +147,63 @@ def cpu_warmup(duration: int, logger: Logger) -> None:
 
 
 def merge_isolated_csvs(eigen_csv: Path, xsimd_csv: Path, out_csv: Path, logger: Logger) -> None:
-    """Merge two isolated CSVs: header from the first, data rows appended."""
+    """Merge engine CSVs without duplicating backends present in both.
+
+    The two executables differ only in their RTNeural implementation. Shared
+    backends run in both binaries, so appending the second file wholesale would
+    double-weight them during aggregation.
+    """
     with eigen_csv.open("r", encoding="utf-8") as f:
         eigen_lines = f.read().splitlines()
     merged = list(eigen_lines)
     if xsimd_csv.exists():
         with xsimd_csv.open("r", encoding="utf-8") as f:
             xsimd_lines = f.read().splitlines()
-        merged.extend(xsimd_lines[1:])  # drop the header (tail -n +2)
+        if eigen_lines and xsimd_lines:
+            eigen_rows = list(csv.reader(eigen_lines))
+            xsimd_rows = list(csv.reader(xsimd_lines))
+            if eigen_rows[0] != xsimd_rows[0]:
+                raise PhaseError("isolated CSV headers differ between engine variants")
+            try:
+                backend_idx = eigen_rows[0].index("backend")
+            except ValueError as exc:
+                raise PhaseError("isolated CSV has no 'backend' column") from exc
+            eigen_backends = {row[backend_idx] for row in eigen_rows[1:] if len(row) > backend_idx}
+            xsimd_only = {
+                row[backend_idx]
+                for row in xsimd_rows[1:]
+                if len(row) > backend_idx and row[backend_idx] not in eigen_backends
+            }
+            merged.extend(
+                raw
+                for raw, row in zip(xsimd_lines[1:], xsimd_rows[1:], strict=True)
+                if len(row) > backend_idx and row[backend_idx] in xsimd_only
+            )
     with out_csv.open("w", encoding="utf-8") as f:
         f.write("\n".join(merged) + "\n")
-    logger.log(f"  {out_csv.name}: {len(merged)} rows")
+    logger.log(f"  {out_csv.name}: {max(0, len(merged) - 1)} data rows")
+
+
+@contextlib.contextmanager
+def _power_assertion(logger: Logger):
+    """Keep macOS awake for the complete benchmark run, if available."""
+    caffeinate = shutil.which("caffeinate") if sys.platform == "darwin" else None
+    if caffeinate is None:
+        yield False
+        return
+
+    proc = subprocess.Popen(
+        [caffeinate, "-dims", "-w", str(os.getpid())],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    logger.log("macOS power assertion active (caffeinate -dims).")
+    try:
+        yield True
+    finally:
+        proc.terminate()
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            proc.wait(timeout=5)
 
 
 def _run_phase(logger: Logger, label: str, command: list[str]) -> None:
@@ -184,7 +245,12 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def run(args: argparse.Namespace) -> int:
+    from . import analyze, plot_figures
     from .config import repo_root
+
+    if args.warmup < 0 or args.cooldown < 0:
+        print("ERROR: --warmup and --cooldown must be non-negative", file=sys.stderr)
+        return 2
 
     # --- Resolve + validate config ---
     preset = args.experiment or args.config
@@ -195,6 +261,7 @@ def run(args: argparse.Namespace) -> int:
     mm = config.get("models_manifest")
     if isinstance(mm, str) and mm and not os.path.isabs(mm):
         config["models_manifest"] = str(Path(mm).resolve())
+    mm = config.get("models_manifest")
 
     output_dir = Path(args.output_dir) if args.output_dir else repo_root() / "runs" / _timestamp()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -212,6 +279,13 @@ def run(args: argparse.Namespace) -> int:
         "git_rev": _git_head(),
         "config_sha256": config_sha256(config),
         "resolved_config": str(resolved_path),
+        "models_manifest": str(mm) if mm else None,
+        "models_manifest_sha256": _sha256_file(mm) if mm else None,
+        "dependency_pins_sha256": _sha256_file(repo_root() / "cmake" / "Versions.cmake"),
+        "engine_sha256": {
+            "nab-engine": _sha256_file(eigen_bin),
+            "nab-engine-xsimd": _sha256_file(xsimd_bin),
+        },
         "mode": args.mode,
         "warmup_seconds": args.warmup,
         "cooldown_seconds": args.cooldown,
@@ -246,55 +320,56 @@ def run(args: argparse.Namespace) -> int:
     xsimd_available = xsimd_bin.exists() and os.access(xsimd_bin, os.X_OK)
 
     try:
-        if run_isolated:
-            # Phase 1: Eigen isolated (required binary for this phase group)
-            if not (eigen_bin.exists() and os.access(eigen_bin, os.X_OK)):
-                raise PhaseError(f"Eigen binary not found or not executable: {eigen_bin}")
-            cpu_warmup(args.warmup, logger)
-            _run_phase(
-                logger,
-                "PHASE 1/3: Eigen isolated",
-                [str(eigen_bin), "--mode", "isolated", "--output", str(isolated_csv)]
-                + config_args
-                + extra_args,
-            )
-
-            logger.log(f"Cooling down {args.cooldown}s...")
-            time.sleep(args.cooldown)
-
-            # Phase 2: XSIMD isolated
-            if xsimd_available:
+        with _power_assertion(logger):
+            if run_isolated:
+                # Phase 1: Eigen isolated (required binary for this phase group)
+                if not (eigen_bin.exists() and os.access(eigen_bin, os.X_OK)):
+                    raise PhaseError(f"Eigen binary not found or not executable: {eigen_bin}")
                 cpu_warmup(args.warmup, logger)
                 _run_phase(
                     logger,
-                    "PHASE 2/3: XSIMD isolated",
-                    [str(xsimd_bin), "--mode", "isolated", "--output", str(isolated_xsimd_csv)]
+                    "PHASE 1/3: Eigen isolated",
+                    [str(eigen_bin), "--mode", "isolated", "--output", str(isolated_csv)]
                     + config_args
                     + extra_args,
                 )
-            else:
-                logger.log(f"Skipping XSIMD isolated: binary not found ({xsimd_bin}).")
 
-            # Merge isolated CSVs
-            if isolated_csv.exists():
-                logger.log("Merging isolated CSVs...")
-                merge_isolated_csvs(isolated_csv, isolated_xsimd_csv, merged_csv, logger)
+                logger.log(f"Cooling down {args.cooldown}s...")
+                time.sleep(args.cooldown)
 
-        if run_contention:
-            if xsimd_available:
-                if run_isolated:
-                    logger.log(f"Cooling down {args.cooldown}s...")
-                    time.sleep(args.cooldown)
-                cpu_warmup(args.warmup, logger)
-                _run_phase(
-                    logger,
-                    "PHASE 3/3: XSIMD contention",
-                    [str(xsimd_bin), "--mode", "contention", "--output-dir", str(output_dir)]
-                    + config_args
-                    + extra_args,
-                )
-            else:
-                logger.log(f"Skipping XSIMD contention: binary not found ({xsimd_bin}).")
+                # Phase 2: XSIMD isolated
+                if xsimd_available:
+                    cpu_warmup(args.warmup, logger)
+                    _run_phase(
+                        logger,
+                        "PHASE 2/3: XSIMD isolated",
+                        [str(xsimd_bin), "--mode", "isolated", "--output", str(isolated_xsimd_csv)]
+                        + config_args
+                        + extra_args,
+                    )
+                else:
+                    logger.log(f"Skipping XSIMD isolated: binary not found ({xsimd_bin}).")
+
+                # Merge isolated CSVs
+                if isolated_csv.exists():
+                    logger.log("Merging isolated CSVs...")
+                    merge_isolated_csvs(isolated_csv, isolated_xsimd_csv, merged_csv, logger)
+
+            if run_contention:
+                if xsimd_available:
+                    if run_isolated:
+                        logger.log(f"Cooling down {args.cooldown}s...")
+                        time.sleep(args.cooldown)
+                    cpu_warmup(args.warmup, logger)
+                    _run_phase(
+                        logger,
+                        "PHASE 3/3: XSIMD contention",
+                        [str(xsimd_bin), "--mode", "contention", "--output-dir", str(output_dir)]
+                        + config_args
+                        + extra_args,
+                    )
+                else:
+                    logger.log(f"Skipping XSIMD contention: binary not found ({xsimd_bin}).")
     except PhaseError as exc:
         logger.log(f"ERROR: {exc}")
         return 1
@@ -335,7 +410,7 @@ def run(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run the benchmark suite")
+    parser = argparse.ArgumentParser(description="Run the benchmark suite", allow_abbrev=False)
     add_arguments(parser)
     return run(parser.parse_args(argv))
 

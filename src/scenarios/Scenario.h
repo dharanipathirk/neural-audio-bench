@@ -51,7 +51,7 @@ public:
     // session-building helpers; scenarios call into it. `sweepValue` is the
     // current contention_level / instance_count / depth / custom value.
     virtual SessionTimingInfo build(te::Edit& edit, EditBuilder& builder,
-                                    BackendType backend, ModelType model, ModelSize size,
+                                    const std::string& backend, const ModelSpec& model,
                                     int sweepValue, const BenchmarkRuntimeConfig& cfg,
                                     double sampleRate) = 0;
 

@@ -35,7 +35,7 @@ bool insertContentionPlugin(te::Edit& edit, te::AudioTrack& track,
 } // namespace
 
 SessionTimingInfo ConfigurableScenario::build(te::Edit& edit, EditBuilder& builder,
-                                              BackendType backend, ModelType model, ModelSize size,
+                                              const std::string& backend, const ModelSpec& model,
                                               int sweepValue, const BenchmarkRuntimeConfig& /*cfg*/,
                                               double sampleRate)
 {
@@ -76,7 +76,7 @@ SessionTimingInfo ConfigurableScenario::build(te::Edit& edit, EditBuilder& build
                 // adds the audio clip. Pre-neural "chain" is then inserted at 0
                 // in reverse so it ends up before the neural plugin; "chain_after"
                 // is appended at the end.
-                auto* logger = builder.addNeuralPlugin(*track, backend, model, size, clipDuration, info);
+                auto* logger = builder.addNeuralPlugin(*track, backend, model, clipDuration, info);
                 if (logger)
                     info.neuralLoggers.push_back(logger);
 

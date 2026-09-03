@@ -34,17 +34,17 @@ private:
     std::vector<float> generateSignal(size_t numSamples, uint32_t seed = 42);
 
     // Mode A: measure throughput (x realtime)
-    void runModeA(FILE* csvFile, const char* backend, ModelType model, ModelSize size,
+    void runModeA(FILE* csvFile, const char* backend, const ModelSpec& spec,
                   std::function<void(const float*, float*, int)> processBlock,
                   const BenchmarkRuntimeConfig& cfg);
 
     // Mode B: per-buffer latency at each buffer size
-    void runModeB(FILE* csvFile, const char* backend, ModelType model, ModelSize size,
+    void runModeB(FILE* csvFile, const char* backend, const ModelSpec& spec,
                   std::function<void(const float*, float*, int)> processBlock,
                   std::function<void()> resetFn,
                   const BenchmarkRuntimeConfig& cfg);
 
     // Run all backends for a given model+size combination
-    void benchmarkModel(FILE* csvFile, ModelType model, ModelSize size,
-                        const ModelSpec& spec, const BenchmarkRuntimeConfig& cfg);
+    void benchmarkModel(FILE* csvFile, const ModelSpec& spec,
+                        const BenchmarkRuntimeConfig& cfg);
 };

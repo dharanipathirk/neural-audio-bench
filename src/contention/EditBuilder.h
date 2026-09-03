@@ -53,8 +53,8 @@ struct SessionTimingInfo
 // the plugin's neural TimingLogger (nullptr if the spec/backend is unavailable).
 // The plugin is inserted at position 0 (front of the track).
 // ---------------------------------------------------------------------------
-TimingLogger* attachNeuralPlugin(te::AudioTrack& track, BackendType backend,
-                                 const ModelSpec* spec, const juce::String& pluginName,
+TimingLogger* attachNeuralPlugin(te::AudioTrack& track, const std::string& backend,
+                                 const ModelSpec& spec, const juce::String& pluginName,
                                  SessionTimingInfo& sessionInfo);
 
 // ---------------------------------------------------------------------------
@@ -75,8 +75,8 @@ public:
 
     void addAudioClip(te::AudioTrack& track, double durationSeconds);
     void addConventionalDSP(te::AudioTrack& track, double clipDuration);
-    TimingLogger* addNeuralPlugin(te::AudioTrack& track, BackendType backend,
-                                   ModelType model, ModelSize size, double clipDuration,
+    TimingLogger* addNeuralPlugin(te::AudioTrack& track, const std::string& backend,
+                                   const ModelSpec& spec, double clipDuration,
                                    SessionTimingInfo& sessionInfo);
 
     // Add CallbackStartPlugin to a track, connected to shared timer + thread ID logger

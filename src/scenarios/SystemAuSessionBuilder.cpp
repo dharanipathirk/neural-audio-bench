@@ -4,6 +4,7 @@
 #include "../contention/EditBuilder.h"  // for SessionTimingInfo + attachNeuralPlugin
 #include "../host/NeuralInferencePlugin.h"
 
+#include <algorithm>
 #include <random>
 
 // ---------------------------------------------------------------------------
@@ -136,9 +137,14 @@ void SystemAuSessionBuilder::ensureNoiseWavFile(double durationSeconds, double s
     noiseWavFile.deleteFile();
 
     juce::WavAudioFormat wavFormat;
-    std::unique_ptr<juce::AudioFormatWriter> writer(
-        wavFormat.createWriterFor(new juce::FileOutputStream(noiseWavFile),
-                                   sampleRate, 1, 16, {}, 0));
+    std::unique_ptr<juce::OutputStream> stream =
+        std::make_unique<juce::FileOutputStream>(noiseWavFile);
+    auto writer = wavFormat.createWriterFor(
+        stream,
+        juce::AudioFormatWriterOptions{}
+            .withSampleRate(sampleRate)
+            .withNumChannels(1)
+            .withBitsPerSample(16));
     if (writer)
         writer->writeFromAudioSampleBuffer(buffer, 0, numSamples);
 }
@@ -188,12 +194,12 @@ void SystemAuSessionBuilder::registerPluginTypes()
 }
 
 // ---------------------------------------------------------------------------
-// Per-track plugin chains (from benchmark_session_layout.md)
+// Per-track plugin chains for the fixed system-AU session
 // ---------------------------------------------------------------------------
 
 void SystemAuSessionBuilder::buildTrackChain(te::Edit& edit, te::AudioTrack& track, int trackNumber)
 {
-    // Track numbering: 1-indexed in the layout doc, 0-indexed here.
+    // Track numbering: 1-indexed in the documented layout, 0-indexed here.
     // Each track gets insert plugins per the session layout.
     int t = trackNumber + 1; // Convert to 1-indexed for readability
 
@@ -471,47 +477,49 @@ void SystemAuSessionBuilder::addCallbackStart(te::AudioTrack& track, CallbackTim
     }
 }
 
-TimingLogger* SystemAuSessionBuilder::addNeuralPlugin(te::AudioTrack& track, BackendType backend,
-                                                 ModelType model, ModelSize size, double clipDuration,
+TimingLogger* SystemAuSessionBuilder::addNeuralPlugin(te::AudioTrack& track,
+                                                 const std::string& backend,
+                                                 const ModelSpec& model, double clipDuration,
                                                  SessionTimingInfo& sessionInfo)
 {
     addAudioClip(track, clipDuration);
 
     // Plugin display name — kept byte-identical to the pre-refactor
     // SystemAuSessionBuilder (note the Direct/Anira prefixes differ from EditBuilder).
-    juce::String name;
-    switch (backend)
-    {
-        case BackendType::BNNSGraph:
-            name = "BNNS_" + juce::String(modelTypeName(model)); break;
-        case BackendType::RTNeural_Eigen:
-        case BackendType::RTNeural_XSIMD:
-            name = "RTNeural_" + juce::String(modelTypeName(model)); break;
-        case BackendType::Direct_LibTorch:
-            name = "DirectLT_" + juce::String(modelTypeName(model)); break;
-        case BackendType::Direct_ONNX:
-            name = "DirectONNX_" + juce::String(modelTypeName(model)); break;
-        case BackendType::Anira_LibTorch:
-            name = "AniraLT_" + juce::String(modelTypeName(model)); break;
-        case BackendType::Anira_ONNX:
-            name = "AniraONNX_" + juce::String(modelTypeName(model)); break;
-        default:
-            break;
-    }
+    const auto modelName = modelArchDisplayName(model);
+    juce::String prefix = juce::String(backend);
+    if (backend == "BNNSGraph") prefix = "BNNS";
+    else if (backend.rfind("RTNeural_", 0) == 0) prefix = "RTNeural";
+    else if (backend == "Direct_LibTorch") prefix = "DirectLT";
+    else if (backend == "Direct_ONNX") prefix = "DirectONNX";
+    else if (backend == "Anira_LibTorch") prefix = "AniraLT";
+    else if (backend == "Anira_ONNX") prefix = "AniraONNX";
 
-    const ModelSpec* spec = nab::findModelSpec(specs, model, size);
-    return attachNeuralPlugin(track, backend, spec, name, sessionInfo);
+    const auto name = prefix + "_" + juce::String(modelName);
+    return attachNeuralPlugin(track, backend, model, name, sessionInfo);
 }
 
 // ---------------------------------------------------------------------------
 // Build the full session
 // ---------------------------------------------------------------------------
 
-SessionTimingInfo SystemAuSessionBuilder::buildSession(te::Edit& edit, BackendType backend,
-                                                  ModelType model, ModelSize size, int activeTracks,
+SessionTimingInfo SystemAuSessionBuilder::buildSession(te::Edit& edit,
+                                                  const std::string& backend,
+                                                  const ModelSpec& model, int activeTracks,
                                                   double sampleRate)
 {
     registerPluginTypes();
+
+    const int effectiveActiveTracks =
+        std::clamp(activeTracks, 0, kMaxConventionalTracks);
+    if (effectiveActiveTracks != activeTracks)
+    {
+        fprintf(stderr,
+                "  WARNING: requested Dimension A contention level %d maps to %d "
+                "conventional source tracks (valid range 0-%d); the CSV retains "
+                "the requested level for paper compatibility\n",
+                activeTracks, effectiveActiveTracks, kMaxConventionalTracks);
+    }
 
     double clipDuration = 30.0; // Long enough for warmup + measurement
     ensureNoiseWavFile(clipDuration, sampleRate);
@@ -538,12 +546,12 @@ SessionTimingInfo SystemAuSessionBuilder::buildSession(te::Edit& edit, BackendTy
     //   31-35: FX Returns (Plate Reverb, Hall Reverb, Slapback, Ping-Pong, Parallel Comp)
     // ---------------------------------------------------------------------------
 
-    edit.ensureNumberOfAudioTracks(36);
+    edit.ensureNumberOfAudioTracks(kSessionTrackCount);
     auto tracks = te::getAudioTracks(edit);
 
-    if (static_cast<int>(tracks.size()) < 36)
+    if (static_cast<int>(tracks.size()) < kSessionTrackCount)
     {
-        fprintf(stderr, "  ERROR: Could not create 36 tracks\n");
+        fprintf(stderr, "  ERROR: Could not create %d tracks\n", kSessionTrackCount);
         return info;
     }
 
@@ -554,13 +562,13 @@ SessionTimingInfo SystemAuSessionBuilder::buildSession(te::Edit& edit, BackendTy
     // activeTracks = number of CONVENTIONAL tracks alongside the neural track.
     // Track 14 (neural) is always active and does NOT count toward activeTracks.
     int conventionalCount = 0;
-    for (int i = 0; i < 24; i++)
+    for (int i = 0; i < kSourceTrackCount; i++)
     {
         auto* track = tracks[static_cast<size_t>(i)];
 
-        if (i == 14) // Track 15 = Electric Lead Guitar = NEURAL MODEL
+        if (i == kNeuralTrackIndex) // Track 15 = Electric Lead Guitar = NEURAL MODEL
         {
-            info.neuralLogger = addNeuralPlugin(*track, backend, model, size, clipDuration, info);
+            info.neuralLogger = addNeuralPlugin(*track, backend, model, clipDuration, info);
 
             // Post-neural processing (from session layout)
             insertAU(edit, *track, "AUHipass", -1);
@@ -573,7 +581,7 @@ SessionTimingInfo SystemAuSessionBuilder::buildSession(te::Edit& edit, BackendTy
             addCallbackStart(*track, info.callbackTimer.get(), info.threadIdLogger.get());
             track->setMute(false);
         }
-        else if (conventionalCount < activeTracks)
+        else if (conventionalCount < effectiveActiveTracks)
         {
             // Active conventional track with real AU chain
             addAudioClip(*track, clipDuration);

@@ -4,10 +4,12 @@
 
 #include "../plugins/ContentionPlugins.h"
 
+#include <algorithm>
+
 namespace nab {
 
 SessionTimingInfo MixContentionScenario::build(te::Edit& edit, EditBuilder& builder,
-                                               BackendType backend, ModelType model, ModelSize size,
+                                               const std::string& backend, const ModelSpec& model,
                                                int sweepValue, const BenchmarkRuntimeConfig& cfg,
                                                double sampleRate)
 {
@@ -26,13 +28,13 @@ SessionTimingInfo MixContentionScenario::build(te::Edit& edit, EditBuilder& buil
         }
 
         if (auAvailable)
-            return auBuilder.buildSession(edit, backend, model, size, sweepValue, sampleRate);
+            return auBuilder.buildSession(edit, backend, model, sweepValue, sampleRate);
 
-        return buildCustomDsp(edit, builder, backend, model, size, sweepValue, sampleRate,
+        return buildCustomDsp(edit, builder, backend, model, sweepValue, sampleRate,
                               cfg.contentionNumTracks);
     }
 
-    return buildCustomDsp(edit, builder, backend, model, size, sweepValue, sampleRate,
+    return buildCustomDsp(edit, builder, backend, model, sweepValue, sampleRate,
                           cfg.contentionNumTracks);
 }
 
@@ -40,11 +42,22 @@ SessionTimingInfo MixContentionScenario::build(te::Edit& edit, EditBuilder& buil
 // Custom-DSP fallback layout — moved verbatim from EditBuilder::buildDimensionA.
 // ---------------------------------------------------------------------------
 SessionTimingInfo MixContentionScenario::buildCustomDsp(te::Edit& edit, EditBuilder& builder,
-                                                        BackendType backend, ModelType model,
-                                                        ModelSize size, int activeTracks,
+                                                        const std::string& backend,
+                                                        const ModelSpec& model, int activeTracks,
                                                         double sampleRate, int numTracks)
 {
     builder.registerPluginTypes();
+
+    const int maxConventionalTracks = std::max(0, numTracks - 1);
+    const int effectiveActiveTracks = std::clamp(activeTracks, 0, maxConventionalTracks);
+    if (effectiveActiveTracks != activeTracks)
+    {
+        fprintf(stderr,
+                "  WARNING: requested Dimension A contention level %d maps to %d "
+                "conventional tracks in the %d-track custom-DSP layout; the CSV "
+                "retains the requested level\n",
+                activeTracks, effectiveActiveTracks, numTracks);
+    }
 
     // Audio clips are mono.  The session layout spec mentions stereo tracks
     // (overheads, room mics, synth pad) but this benchmark uses mono throughout
@@ -73,7 +86,7 @@ SessionTimingInfo MixContentionScenario::buildCustomDsp(te::Edit& edit, EditBuil
 
         if (i == 14) // Track 15 = neural model track
         {
-            info.neuralLogger = builder.addNeuralPlugin(*track, backend, model, size, clipDuration, info);
+            info.neuralLogger = builder.addNeuralPlugin(*track, backend, model, clipDuration, info);
 
             auto eqPlugin = edit.getPluginCache().createNewPlugin(
                 te::ContentionEQPlugin::xmlTypeName, {});
@@ -86,7 +99,7 @@ SessionTimingInfo MixContentionScenario::buildCustomDsp(te::Edit& edit, EditBuil
             // Add callback start FIRST on this track (before neural plugin)
             builder.addCallbackStart(*track, info.callbackTimer.get(), info.threadIdLogger.get());
         }
-        else if (conventionalCount < activeTracks)
+        else if (conventionalCount < effectiveActiveTracks)
         {
             builder.addConventionalDSP(*track, clipDuration);
             conventionalCount++;

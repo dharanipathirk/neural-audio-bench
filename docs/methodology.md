@@ -20,6 +20,23 @@ processes the full audio buffer in its natural mode:
 Models are **stateful** across calls, mono, 48 kHz, with **seeded random
 weights** — inference cost depends on topology and parameter count, not
 weight values, and no data-dependent branching exists in these architectures.
+The exported CoreML, TorchScript, and ONNX artifacts use seed 42. RTNeural
+uses the same compiled topologies with its template initialization rather
+than loading the exported JSON weights; this does not change the executed
+operations or timing path, but means cross-backend numerical output is not a
+claim of this benchmark.
+
+**Numeric precision.** The CoreML exports are fp16. This is not a tuning
+choice: CoreML's stateful-model API requires fp16 state tensors (coremltools
+rejects fp32 state with "State only support fp16 dtype"), and `mlprogram`
+compute defaults to fp16, so every weight and activation in the compiled
+graph that BNNSGraph executes is half precision; the engine converts the
+float buffer in and out on each call, inside the timed region. ONNX Runtime,
+LibTorch, and RTNeural compute in fp32. The BNNSGraph numbers therefore
+include an fp16 advantage (AMX fp16 throughput, half the weight and
+activation traffic) that the other backends do not get, and a
+matched-precision comparison of these stateful models is not possible with
+the current CoreML toolchain. Each manifest entry's `notes` records this.
 
 ## Isolated benchmark
 
@@ -54,12 +71,21 @@ deadline, but the output is wrong, so both failure modes are counted.
 
 **Scenarios (dimensions)**:
 
-- **A — Mix contention**: a realistic 36-track session (drums, bass,
+- **A — Mix contention**: a fixed 36-track session (drums, bass,
   guitars, keys, vocals, buses, FX returns) with per-track channel strips
   of real macOS system Audio Units (`use_system_au: true`;
   AUParametricEQ, AUDynamicsProcessor, AUMatrixReverb, …) or lightweight
   custom DSP. The neural plugin sits on one guitar track; the number of
-  active conventional tracks sweeps the contention level.
+  active conventional source tracks sweeps the contention level. The
+  historical `contention_level` column records the requested count. In the
+  system-AU layout used by the paper, there are only 23 conventional source
+  slots because the neural model occupies source track 15, so requested levels
+  24 and 36 both activate all 23. Seven group/mix buses and five FX-return
+  tracks are active at every level; requested level 0 is therefore a fixed mix
+  bed plus the neural track, not an otherwise empty session. These semantics
+  are retained for exact paper reproduction, and the engine warns whenever it
+  clamps a requested level. The lightweight custom-DSP fallback is a simpler
+  `num_tracks`-track layout and should not be treated as the paper session.
 - **B — Instance count**: N neural instances on separate tracks, no
   conventional DSP, buffer 128. Per-instance timing from the first
   instance; session health via xruns and summed inference underruns.
@@ -97,7 +123,7 @@ baseline. Run under `caffeinate` to prevent sleep; `nab run` handles this.
 occasionally fail to start/restart the transport or record no timing data —
 Core Audio transients, most likely when the audio graph has not settled
 (e.g. immediately after a heavy prior workload). The contention runner
-retries such a configuration up to three times, letting the device settle
+allows up to three attempts (two retries), letting the device settle
 between attempts, before recording an explicit `error` result row. This
 keeps long sweeps robust without touching the measurement of a successful
 configuration. A `status = error` / `skipped` row in the results therefore
@@ -124,6 +150,7 @@ a one-off hiccup.
   conditions. Compare backends within a run, not absolute numbers across
   machines. The run manifest records machine metadata and thermal state
   for provenance.
-- RTSan verification: the BNNSGraph execution path was verified
-  realtime-safe with RealtimeSanitizer (`-fsanitize=realtime`,
-  `[[clang::nonblocking]]`) over repeated invocations.
+- RTSan verification: the BNNSGraph execution call was verified realtime-safe
+  with RealtimeSanitizer (`-fsanitize=realtime`, `[[clang::nonblocking]]`) over
+  repeated invocations. The standalone source and reproduction instructions
+  are in [`tools/rtsan-bnns-test/`](../tools/rtsan-bnns-test/).

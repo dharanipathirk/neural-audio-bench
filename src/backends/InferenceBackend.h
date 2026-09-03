@@ -22,6 +22,21 @@ struct ModelSpec
     std::map<std::string, std::string> formatPaths; // format name -> ABSOLUTE path ("coreml","onnx","torchscript","rtneural")
 };
 
+// Stable CSV architecture label. Preserve the paper's capitalization for its
+// three built-in families; custom architecture names are emitted verbatim.
+inline std::string modelArchDisplayName(const ModelSpec& spec)
+{
+    if (spec.arch == "lstm") return "LSTM";
+    if (spec.arch == "tcn") return "TCN";
+    if (spec.arch == "wavenet") return "WaveNet";
+    return spec.arch;
+}
+
+inline std::string modelSizeDisplayName(const ModelSpec& spec)
+{
+    return spec.size.empty() ? "unspecified" : spec.size;
+}
+
 struct PrepareContext
 {
     double sampleRate = 48000.0;

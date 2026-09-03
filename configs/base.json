@@ -39,6 +39,7 @@
   "contention": {
     "buffer_sizes": [64, 128, 256, 512],
     "contention_levels": [0, 8, 24, 36],
+    "_contention_levels_comment": "Dimension A values are requested conventional source-track counts. The neural track and 12 bus/return tracks are always active; only 23 conventional source slots exist, so requested levels 24 and 36 both map to 23 and are retained for paper compatibility.",
     "instance_counts": [1, 2, 4, 8, 16],
     "neural_track_depths": [1, 3, 5, 7],
     "_neural_track_depth_presets": "1=bare, 3=channel_strip (EQ+Comp->Neural), 5=mix_fx (+Delay+Reverb), 7=heavy_chain (+EQ+Comp)",
@@ -52,7 +53,7 @@
   },
 
   "backends": {
-    "_comment": "Which backends to test. Set false to skip. Backends unavailable at compile time are always skipped (and reported as such in the results).",
+    "_comment": "Which backends to test. Set false to skip. Backends unavailable in a selected engine binary are logged and skipped.",
     "BNNSGraph": true,
     "RTNeural_Eigen": true,
     "RTNeural_XSIMD": true,

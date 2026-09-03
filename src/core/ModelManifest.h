@@ -32,4 +32,9 @@ public:
 const ModelSpec* findModelSpec(const std::vector<ModelSpec>& specs,
                                ModelType arch, ModelSize size);
 
+// Keep the built-in size-major order (size outer, architecture inner) for the
+// nine built-ins, then append every remaining manifest entry in declaration
+// order, so custom models run without changing the order of the built-ins.
+std::vector<const ModelSpec*> benchmarkModelOrder(const std::vector<ModelSpec>& specs);
+
 } // namespace nab

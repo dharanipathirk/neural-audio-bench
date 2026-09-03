@@ -31,7 +31,7 @@ Alongside the CSVs, every `nab run` writes:
 | `median_ns`, `mean_ns`, `p95_ns`, `p99_ns`, `p999_ns`, `min_ns`, `max_ns`, `stddev_ns` | Per-iteration (isolated) or per-callback (contention) wall-clock duration statistics, nanoseconds. Median is interpolated; p95/p99/p99.9 are nearest-rank |
 | `rtf` | Real-time factor = median duration / buffer deadline |
 | `dropouts` | Iterations/callbacks exceeding the deadline |
-| `total_samples` | Number of timed iterations/callbacks in the row |
+| `total_samples` | Callback rows: number of timed iterations/callbacks. Throughput rows: number of audio samples processed by the single timed call |
 
 ## Isolated results (`isolated.csv`)
 
@@ -46,7 +46,7 @@ Additional columns:
 | Column | Meaning |
 |---|---|
 | `dimension` | `dim_a` (mix contention), `dim_b` (instance count), `dim_c` (serial depth); a `_cb` suffix (`dim_a_cb`, …) marks the full-callback row measured from track start to master-bus end for the same configuration |
-| `contention_level` | Active conventional tracks (dim_a); serial chain depth (dim_c) |
+| `contention_level` | Dim A: requested conventional track count. In the paper/system-AU layout this is clamped to 0–23 and the fixed 12-track bus/return bed remains active, so historical levels 24 and 36 both mean 23 active conventional sources. Dim C: serial chain depth. Custom scenarios: configured sweep value |
 | `instance_count` | Neural plugin instances (dim_b; 1 elsewhere) |
 | `util_p50`, `util_p95`, `util_p99`, `util_p999`, `util_max` | Per-callback utilization percentiles: (duration / deadline) × 100% |
 | `hw_xruns` | Core Audio hardware overload count during the measurement window (`getXRunCount` delta) |

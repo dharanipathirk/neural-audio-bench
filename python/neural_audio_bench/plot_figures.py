@@ -20,36 +20,47 @@ Usage:
   nab plot [--isolated results/isolated.csv] [--contention results/contention.csv]
 """
 
+from __future__ import annotations
+
 import argparse
 import json
+import os
+import tempfile
 from pathlib import Path
 
-import matplotlib
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import matplotlib.ticker as mticker  # noqa: E402
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
-import seaborn as sns  # noqa: E402
+def _load_plot_dependencies() -> None:
+    """Import plotting libraries only for commands that actually plot."""
+    global matplotlib, mticker, np, pd, plt, sns
+    cache_root = Path(tempfile.gettempdir()) / (
+        f"neural-audio-bench-cache-{getattr(os, 'getuid', lambda: 0)()}"
+    )
+    cache_root.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("MPLCONFIGDIR", str(cache_root / "matplotlib"))
+    os.environ.setdefault("XDG_CACHE_HOME", str(cache_root))
+    import matplotlib
 
-# ---------------------------------------------------------------------------
-# Theme and palette
-# ---------------------------------------------------------------------------
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import matplotlib.ticker as mticker
+    import numpy as np
+    import pandas as pd
+    import seaborn as sns
 
-sns.set_theme(
-    style="whitegrid",
-    context="paper",
-    font_scale=1.2,
-    rc={
-        "figure.dpi": 300,
-        "savefig.dpi": 300,
-        "savefig.bbox": "tight",
-        "grid.alpha": 0.3,
-        "axes.edgecolor": ".3",
-        "font.family": "serif",
-    },
-)
+    sns.set_theme(
+        style="whitegrid",
+        context="paper",
+        font_scale=1.2,
+        rc={
+            "figure.dpi": 300,
+            "savefig.dpi": 300,
+            "savefig.bbox": "tight",
+            "grid.alpha": 0.3,
+            "axes.edgecolor": ".3",
+            "font.family": "serif",
+        },
+    )
+
 
 # Backend display names (clean labels for figures)
 BACKEND_LABELS = {
@@ -797,17 +808,22 @@ AMX_PALETTE = {
 
 
 def _load_amx_results(script_file: Path) -> list[dict]:
-    # AMX scan output lands in microarch/amx_results (see
-    # microarch/run_amx_analysis.sh); these figures are optional and skipped
-    # when no scan has been run.
+    # The harness creates one timestamped run directory containing amx_json/.
+    # Plot the newest run rather than combining unrelated experiments.
+    del script_file  # retained in this private helper's signature for compatibility
     from neural_audio_bench.config import repo_root
 
-    amx_dir = repo_root() / "microarch" / "amx_results"
-    if not amx_dir.exists():
+    results_root = repo_root() / "microarch" / "results"
+    run_dirs = sorted(
+        path for path in results_root.glob("*") if path.is_dir() and (path / "amx_json").is_dir()
+    )
+    if not run_dirs:
         print(
-            f"  AMX: directory not found ({amx_dir}) — skipping (optional; run microarch/run_amx_analysis.sh to generate)"
+            f"  AMX: no runs found below {results_root} — skipping "
+            "(optional; run microarch/run_amx_analysis.sh to generate)"
         )
         return []
+    amx_dir = run_dirs[-1] / "amx_json"
     json_files = sorted(amx_dir.glob("*.json"))
     if not json_files:
         print(f"  AMX: no JSON files in {amx_dir} — skipping")
@@ -974,6 +990,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def run(args: argparse.Namespace) -> int:
+    _load_plot_dependencies()
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     script_file = Path(__file__).resolve()
@@ -1016,7 +1033,7 @@ def run(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Generate benchmark figures")
+    parser = argparse.ArgumentParser(description="Generate benchmark figures", allow_abbrev=False)
     add_arguments(parser)
     return run(parser.parse_args(argv))
 

@@ -7,7 +7,7 @@ namespace nab {
 // Moved verbatim from EditBuilder::buildDimensionB. `instanceCount` is the
 // current sweep value.
 SessionTimingInfo InstanceCountScenario::build(te::Edit& edit, EditBuilder& builder,
-                                               BackendType backend, ModelType model, ModelSize size,
+                                               const std::string& backend, const ModelSpec& model,
                                                int sweepValue, const BenchmarkRuntimeConfig& /*cfg*/,
                                                double sampleRate)
 {
@@ -28,7 +28,7 @@ SessionTimingInfo InstanceCountScenario::build(te::Edit& edit, EditBuilder& buil
 
     for (int i = 0; i < instanceCount && i < static_cast<int>(tracks.size()); i++)
     {
-        auto* logger = builder.addNeuralPlugin(*tracks[static_cast<size_t>(i)], backend, model, size, clipDuration, info);
+        auto* logger = builder.addNeuralPlugin(*tracks[static_cast<size_t>(i)], backend, model, clipDuration, info);
         if (logger)
             info.neuralLoggers.push_back(logger);
 

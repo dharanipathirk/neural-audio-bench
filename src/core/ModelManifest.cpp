@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Dharanipathi Rathna Kumar Balasubramaniam
 #include "ModelManifest.h"
+#include "backends/RTNeuralTopology.h"
 
 #include <json.hpp>
 
@@ -8,6 +9,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <set>
 
 namespace fs = std::filesystem;
 
@@ -52,6 +54,7 @@ std::vector<ModelSpec> ModelManifest::load(const std::string& manifestPath)
         modelsRoot = manifestDir / j["models_root"].get<std::string>();
 
     std::vector<ModelSpec> specs;
+    std::set<std::string> ids;
     try
     {
         for (const auto& m : j["models"])
@@ -61,6 +64,8 @@ std::vector<ModelSpec> ModelManifest::load(const std::string& manifestPath)
             if (!m.contains("id"))
                 manifestFail(manifestPath, "a model entry is missing required key 'id'");
             sp.id = m["id"].get<std::string>();
+            if (!ids.insert(sp.id).second)
+                manifestFail(manifestPath, "duplicate model id '" + sp.id + "'");
 
             if (!m.contains("arch"))
                 manifestFail(manifestPath, "model '" + sp.id + "' is missing required key 'arch'");
@@ -130,6 +135,10 @@ std::vector<ModelSpec> ModelManifest::synthesize(const std::string& modelDir,
             sp.formatPaths["torchscript"] = modelTorchScriptPath(m, s, modelDir);
             sp.formatPaths["rtneural"]    = modelWeightsPath(m, s, modelDir);
 
+            std::string metadataError;
+            if (!populateRTNeuralCompiledMetadata(sp, metadataError))
+                manifestFail("legacy directory layout", metadataError);
+
             specs.push_back(std::move(sp));
         }
     }
@@ -165,6 +174,29 @@ const ModelSpec* findModelSpec(const std::vector<ModelSpec>& specs,
         if (sp.arch == a && sp.size == s)
             return &sp;
     return nullptr;
+}
+
+std::vector<const ModelSpec*> benchmarkModelOrder(const std::vector<ModelSpec>& specs)
+{
+    std::vector<const ModelSpec*> ordered;
+    std::set<const ModelSpec*> added;
+
+    static const char* legacySizes[] = {"small", "medium", "large"};
+    static const char* legacyArchs[] = {"lstm", "tcn", "wavenet"};
+    for (const auto* size : legacySizes)
+        for (const auto* arch : legacyArchs)
+            for (const auto& spec : specs)
+                if (spec.arch == arch && spec.size == size)
+                {
+                    ordered.push_back(&spec);
+                    added.insert(&spec);
+                }
+
+    for (const auto& spec : specs)
+        if (added.find(&spec) == added.end())
+            ordered.push_back(&spec);
+
+    return ordered;
 }
 
 } // namespace nab

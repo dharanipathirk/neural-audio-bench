@@ -17,10 +17,9 @@
 namespace te = tracktion::engine;
 
 // ---------------------------------------------------------------------------
-// Dimension A's system-AU session builder. Builds a realistic 36-track mixing
+// Dimension A's system-AU session builder. Builds a fixed 36-track mixing
 // session using Apple system Audio Units (AUParametricEQ, AUDynamicsProcessor,
-// AUMatrixReverb, ...) for CPU contention, as described in
-// benchmark_session_layout.md.
+// AUMatrixReverb, ...) for CPU contention, as described in docs/methodology.md.
 //
 // 24 source tracks + group buses + FX returns + mix bus.
 // Track 15 (Electric Lead Guitar) hosts the neural model under test; all other
@@ -35,6 +34,11 @@ struct SessionTimingInfo;
 class SystemAuSessionBuilder
 {
 public:
+    static constexpr int kSessionTrackCount = 36;
+    static constexpr int kSourceTrackCount = 24;
+    static constexpr int kNeuralTrackIndex = 14;
+    static constexpr int kMaxConventionalTracks = kSourceTrackCount - 1;
+
     SystemAuSessionBuilder(te::Engine& engine, const std::string& modelDir,
                            const std::vector<ModelSpec>& specs);
     ~SystemAuSessionBuilder();
@@ -43,14 +47,14 @@ public:
     // Must be called before buildSession().
     bool scanForRequiredAUs();
 
-    // Build the full 36-track session.
-    // activeTracks: how many conventional tracks are active (0-24).
-    // Track 15 (neural) is always active.
+    // Build the full session. activeTracks is the requested number of
+    // conventional source tracks. It is clamped to 0-23 because source track
+    // 15 hosts the always-active neural model. The 12 bus/return tracks remain
+    // active at every level, including requested contention level 0.
     SessionTimingInfo buildSession(
         te::Edit& edit,
-        BackendType backend,
-        ModelType model,
-        ModelSize size,
+        const std::string& backend,
+        const ModelSpec& model,
         int activeTracks,
         double sampleRate);
 
@@ -95,8 +99,8 @@ private:
     void buildFXReturn(te::Edit& edit, te::AudioTrack& track, int fxNumber);
 
     // Neural model insertion (reused from EditBuilder logic)
-    TimingLogger* addNeuralPlugin(te::AudioTrack& track, BackendType backend,
-                                   ModelType model, ModelSize size, double clipDuration,
+    TimingLogger* addNeuralPlugin(te::AudioTrack& track, const std::string& backend,
+                                   const ModelSpec& model, double clipDuration,
                                    SessionTimingInfo& sessionInfo);
 
     // Add CallbackStartPlugin to a track, connected to shared timer + thread ID logger

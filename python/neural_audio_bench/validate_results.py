@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Dharanipathi Rathna Kumar Balasubramaniam
 """Validate a benchmark result CSV: header shape, row sanity, non-emptiness.
 
-Used by CI after the smoke run, and useful for checking any result file:
+Run it after a smoke benchmark, or on any result file:
 
     uv run python -m neural_audio_bench.validate_results results/isolated.csv
 """
@@ -126,7 +126,7 @@ def validate_csv(path: str | Path) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("csv_files", nargs="+", help="Result CSV files to validate")
     args = parser.parse_args(argv)
 

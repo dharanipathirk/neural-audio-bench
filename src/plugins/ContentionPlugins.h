@@ -141,7 +141,7 @@ struct CallbackTimer
 // ---------------------------------------------------------------------------
 // Tracktion Engine plugin wrappers for contention DSP
 // ---------------------------------------------------------------------------
-namespace tracktion { namespace engine {
+namespace tracktion { inline namespace engine {
 
 class ContentionEQPlugin : public Plugin
 {

@@ -4,10 +4,10 @@ index a7f49591b9c..64d131ea72f 100644
 +++ b/modules/tracktion_engine/plugins/tracktion_PluginWindowState.cpp
 @@ -248,7 +248,7 @@ juce::Point<int> PluginWindowState::choosePositionForPluginWindow()
                  return p->getBounds().getPosition() + juce::Point<int> (80, 80);
- 
+
      return juce::Desktop::getInstance().getDisplays()
 -            .getPrimaryDisplay()->userBounds.getRelativePoint (0.2f, 0.2f).roundToInt();
 +            .getPrimaryDisplay()->userArea.getRelativePoint (0.2f, 0.2f).roundToInt();
  }
- 
+
  }} // namespace tracktion { inline namespace engine

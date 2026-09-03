@@ -1,0 +1,9 @@
+schema_version,status,error_msg,mode,backend,model,model_size,buffer_size,rep,median_ns,mean_ns,p95_ns,p99_ns,p999_ns,min_ns,max_ns,stddev_ns,rtf,dropouts,total_samples
+2,ok,,throughput,BNNSGraph,TCN,large,0,1,177,177,0,0,0,0,0,0.0,0.008496,0,240000
+2,ok,,callback,BNNSGraph,TCN,large,64,1,49500,49600,51000,52000,60000,48000,120000,900.0,0.037125,0,100000
+2,ok,,callback,BNNSGraph,TCN,large,128,1,58000,58100,60000,61000,70000,56000,150000,950.0,0.021750,0,90000
+2,ok,,throughput,RTNeural_Eigen,TCN,large,0,1,4630,4630,0,0,0,0,0,0.0,0.222240,0,240000
+2,ok,,callback,RTNeural_Eigen,TCN,large,64,1,300000,300100,310000,320000,340000,290000,500000,5000.0,0.225000,0,20000
+2,ok,,callback,RTNeural_Eigen,TCN,large,128,1,590000,590100,600000,610000,650000,580000,900000,7000.0,0.221250,0,10000
+2,ok,,throughput,BNNSGraph,TCN,large,0,1,180,180,0,0,0,0,0,0.0,0.008640,0,240000
+2,skipped,Direct_ONNX requires format 'onnx' which model 'tcn_large' does not provide,-,Direct_ONNX,TCN,large,0,0,0,0,0,0,0,0,0,0.0,0.000000,0,0

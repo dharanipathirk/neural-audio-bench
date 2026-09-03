@@ -69,7 +69,7 @@ public:
     }
 
     SessionTimingInfo build(te::Edit& edit, EditBuilder& builder,
-                            BackendType backend, ModelType model, ModelSize size,
+                            const std::string& backend, const ModelSpec& model,
                             int sweepValue, const BenchmarkRuntimeConfig& cfg,
                             double sampleRate) override;
 

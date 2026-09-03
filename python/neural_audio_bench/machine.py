@@ -9,6 +9,7 @@ or fails, so this module is safe to call on any platform.
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import json
 import platform
 import subprocess
@@ -39,12 +40,11 @@ def _sysctl_int(key: str) -> int | None:
         return None
 
 
-def _torch_version() -> str | None:
+def _package_version(package: str) -> str | None:
     try:
-        import torch
-    except Exception:  # noqa: BLE001 - torch import may fail for many reasons
+        return importlib.metadata.version(package)
+    except importlib.metadata.PackageNotFoundError:
         return None
-    return getattr(torch, "__version__", None)
 
 
 def _thermal_state() -> str | None:
@@ -69,7 +69,11 @@ def machine_info() -> dict:
         "macos_build": _run(["sw_vers", "-buildVersion"]),
         "platform": platform.platform(),
         "python_version": platform.python_version(),
-        "torch_version": _torch_version(),
+        "clang_version": _run(["clang", "--version"]),
+        "cmake_version": _run(["cmake", "--version"]),
+        "torch_version": _package_version("torch"),
+        "coremltools_version": _package_version("coremltools"),
+        "numpy_version": _package_version("numpy"),
         "thermal_state": _thermal_state(),
     }
 
@@ -84,7 +88,9 @@ def run(_args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Print machine metadata as JSON")
+    parser = argparse.ArgumentParser(
+        description="Print machine metadata as JSON", allow_abbrev=False
+    )
     add_arguments(parser)
     return run(parser.parse_args(argv))
 

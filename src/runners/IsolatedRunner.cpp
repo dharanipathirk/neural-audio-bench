@@ -3,6 +3,8 @@
 #include "IsolatedRunner.h"
 #include "../backends/BackendRegistry.h"
 
+#include <algorithm>
+
 std::vector<float> IsolatedRunner::generateSignal(size_t numSamples, uint32_t seed)
 {
     std::vector<float> signal(numSamples);
@@ -13,7 +15,7 @@ std::vector<float> IsolatedRunner::generateSignal(size_t numSamples, uint32_t se
     return signal;
 }
 
-void IsolatedRunner::runModeA(FILE* csvFile, const char* backend, ModelType model, ModelSize size,
+void IsolatedRunner::runModeA(FILE* csvFile, const char* backend, const ModelSpec& spec,
                               std::function<void(const float*, float*, int)> processBlock,
                               const BenchmarkRuntimeConfig& cfg)
 {
@@ -35,8 +37,10 @@ void IsolatedRunner::runModeA(FILE* csvFile, const char* backend, ModelType mode
     double elapsed_s = elapsed_ns / 1e9;
     double xRT = throughputSeconds / elapsed_s;
 
+    const auto modelName = modelArchDisplayName(spec);
+    const auto sizeName = modelSizeDisplayName(spec);
     fprintf(stderr, "  Mode A [%s/%s/%s]: %.1fx real-time (%.4fs for %.1fs audio)\n",
-            backend, modelTypeName(model), modelSizeName(size), xRT, elapsed_s, throughputSeconds);
+            backend, modelName.c_str(), sizeName.c_str(), xRT, elapsed_s, throughputSeconds);
 
     // Build a TimingStats for the throughput row (single measurement)
     double perSample = elapsed_ns / static_cast<double>(totalSamples);
@@ -46,11 +50,11 @@ void IsolatedRunner::runModeA(FILE* csvFile, const char* backend, ModelType mode
     ts.rtf = 1.0 / xRT;
     ts.total_samples = static_cast<int>(totalSamples);
     CSVOutput::printIsolatedRow(csvFile, "throughput", backend,
-                                 modelTypeName(model), modelSizeName(size),
+                                 modelName.c_str(), sizeName.c_str(),
                                  0, 1, ts);
 }
 
-void IsolatedRunner::runModeB(FILE* csvFile, const char* backend, ModelType model, ModelSize size,
+void IsolatedRunner::runModeB(FILE* csvFile, const char* backend, const ModelSpec& spec,
                               std::function<void(const float*, float*, int)> processBlock,
                               std::function<void()> resetFn,
                               const BenchmarkRuntimeConfig& cfg)
@@ -122,17 +126,21 @@ void IsolatedRunner::runModeB(FILE* csvFile, const char* backend, ModelType mode
             }
 
             auto stats = TimingStats::compute(times, deadline_ns);
+            const auto modelName = modelArchDisplayName(spec);
+            const auto sizeName = modelSizeDisplayName(spec);
             CSVOutput::printIsolatedRow(csvFile, "callback", backend,
-                                         modelTypeName(model), modelSizeName(size),
+                                         modelName.c_str(), sizeName.c_str(),
                                          bufSize, rep + 1, stats);
         }
     }
 }
 
-void IsolatedRunner::benchmarkModel(FILE* csvFile, ModelType model, ModelSize size,
-                                    const ModelSpec& spec, const BenchmarkRuntimeConfig& cfg)
+void IsolatedRunner::benchmarkModel(FILE* csvFile, const ModelSpec& spec,
+                                    const BenchmarkRuntimeConfig& cfg)
 {
-    fprintf(stderr, "\n--- %s / %s ---\n", modelTypeName(model), modelSizeName(size));
+    const auto modelName = modelArchDisplayName(spec);
+    const auto sizeName = modelSizeDisplayName(spec);
+    fprintf(stderr, "\n--- %s / %s ---\n", modelName.c_str(), sizeName.c_str());
 
     auto& reg = BackendRegistry::instance();
 
@@ -142,10 +150,7 @@ void IsolatedRunner::benchmarkModel(FILE* csvFile, ModelType model, ModelSize si
     // isolated mode (supportsIsolated() == false).
     for (const auto& backendName : reg.names())
     {
-        BackendType bt;
-        if (!backendTypeFromName(backendName, bt))
-            continue;
-        if (!cfg.isBackendEnabled(bt))
+        if (!cfg.isBackendEnabled(backendName))
             continue;
 
         auto backend = reg.create(backendName);
@@ -159,27 +164,29 @@ void IsolatedRunner::benchmarkModel(FILE* csvFile, ModelType model, ModelSize si
         {
             fprintf(stderr, "  SKIP %s: %s\n", backendName.c_str(), whyNot.c_str());
             CSVOutput::printIsolatedStatusRow(csvFile, "skipped", whyNot,
-                                              backendName.c_str(), modelTypeName(model),
-                                              modelSizeName(size));
+                                              backendName.c_str(), modelName.c_str(),
+                                              sizeName.c_str());
             continue;
         }
 
-        PrepareContext pc{ cfg.sampleRate, 0, &spec };
+        const int maxBlockSize = cfg.isolatedBufferSizes.empty()
+            ? 0 : *std::max_element(cfg.isolatedBufferSizes.begin(), cfg.isolatedBufferSizes.end());
+        PrepareContext pc{ cfg.sampleRate, maxBlockSize, &spec };
         if (!backend->prepare(pc))
         {
             fprintf(stderr, "  SKIP %s: prepare failed for %s/%s\n",
-                    backendName.c_str(), modelTypeName(model), modelSizeName(size));
+                    backendName.c_str(), modelName.c_str(), sizeName.c_str());
             CSVOutput::printIsolatedStatusRow(csvFile, "error", "prepare failed",
-                                              backendName.c_str(), modelTypeName(model),
-                                              modelSizeName(size));
+                                              backendName.c_str(), modelName.c_str(),
+                                              sizeName.c_str());
             continue;
         }
 
         auto proc = [&](const float* in, float* out, int n) { backend->process(in, out, n); };
         auto reset = [&]() { backend->reset(); };
 
-        runModeA(csvFile, backend->name(), model, size, proc, cfg);
-        runModeB(csvFile, backend->name(), model, size, proc, reset, cfg);
+        runModeA(csvFile, backend->name(), spec, proc, cfg);
+        runModeB(csvFile, backend->name(), spec, proc, reset, cfg);
     }
 }
 
@@ -193,26 +200,11 @@ void IsolatedRunner::runAll(FILE* csvFile)
 
     auto cfg = BenchmarkRuntimeConfig::load(configPath);
 
-    for (int si = 0; si < static_cast<int>(ModelSize::COUNT); si++)
+    for (const auto* spec : nab::benchmarkModelOrder(specs))
     {
-        auto size = static_cast<ModelSize>(si);
-        if (!cfg.isSizeEnabled(size)) continue;
-
-        for (int mi = 0; mi < static_cast<int>(ModelType::COUNT); mi++)
-        {
-            auto model = static_cast<ModelType>(mi);
-            if (!cfg.isModelEnabled(model)) continue;
-
-            const ModelSpec* spec = nab::findModelSpec(specs, model, size);
-            if (!spec)
-            {
-                fprintf(stderr, "  SKIP %s/%s: no model spec available\n",
-                        modelTypeName(model), modelSizeName(size));
-                continue;
-            }
-
-            benchmarkModel(csvFile, model, size, *spec, cfg);
-        }
+        if (!cfg.isSizeEnabled(spec->size) || !cfg.isModelEnabled(spec->arch))
+            continue;
+        benchmarkModel(csvFile, *spec, cfg);
     }
 
     fprintf(stderr, "\nIsolated benchmark complete.\n");

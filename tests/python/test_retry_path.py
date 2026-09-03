@@ -3,7 +3,7 @@
 """Contention transient-retry path, driven by the NAB_TEST_FORCE_TRANSIENT hook.
 
 Requires the built nab-engine and BlackHole as the default output device, so it
-is skipped when either is unavailable (the isolated CI runner has neither). The
+is skipped when either is unavailable (a bare checkout has neither). The
 retry logic itself (fault injection -> retry -> succeed / exhaust) is exercised
 here; on a machine without BlackHole the test no-ops rather than failing.
 """

@@ -29,6 +29,16 @@ CONV_ONNX_NOTE = (
     "ONNX export is stateless (ONNX Runtime has no InOut mechanism for conv state buffers)."
 )
 
+# Recorded in every manifest entry so a results reader knows which precision
+# the BNNSGraph path ran at. CoreML state tensors must be fp16 (coremltools
+# rejects fp32 state), so stateful mlprogram exports are half precision; the
+# other formats are fp32.
+COREML_PRECISION_NOTE = (
+    "CoreML export is fp16 (CoreML state tensors must be fp16, so stateful mlprogram exports "
+    "run in half precision): BNNSGraph computes in fp16 while ONNX Runtime, LibTorch, and "
+    "RTNeural compute in fp32."
+)
+
 
 def _model_info(arch: str, size: str, model, hyperparams: dict) -> dict:
     """Build a manifest entry for an exported model (paths relative to models_root)."""
@@ -52,8 +62,10 @@ def _model_info(arch: str, size: str, model, hyperparams: dict) -> dict:
             "rtneural": f"{base}_weights.json",
         },
     }
+    notes = [COREML_PRECISION_NOTE]
     if arch in ("tcn", "wavenet"):
-        info["notes"] = CONV_ONNX_NOTE
+        notes.append(CONV_ONNX_NOTE)
+    info["notes"] = " ".join(notes)
     return info
 
 
@@ -84,7 +96,7 @@ def export_model(arch_name, size_name, model, states_fn, models_out: Path, is_ls
 
     export_rtneural_json(model, name, out_dir)
 
-    # ONNX: LSTM uses explicit state I/O; TCN/WaveNet use internal state
+    # ONNX: LSTM uses explicit state I/O; TCN/WaveNet exports are stateless.
     if is_lstm:
         export_onnx_lstm(model, name, out_dir)
     else:
@@ -230,7 +242,9 @@ def run(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Export benchmark models to all formats")
+    parser = argparse.ArgumentParser(
+        description="Export benchmark models to all formats", allow_abbrev=False
+    )
     add_arguments(parser)
     return run(parser.parse_args(argv))
 

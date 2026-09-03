@@ -4,6 +4,7 @@
 
 #include "InferenceBackend.h"
 #include <Accelerate/Accelerate.h>
+#include <array>
 #include <string>
 #include <vector>
 #include <cstdlib>
@@ -24,7 +25,7 @@ public:
     BNNSGraphEngine() = default;
     ~BNNSGraphEngine() { deinitialize(); }
 
-    bool initialize(const std::string& mlmodelcPath);
+    bool initialize(const std::string& mlmodelcPath, int preparedBlockSize);
     void deinitialize();
 
     // Process a full buffer in one Execute call (buffer-at-a-time)
@@ -52,6 +53,8 @@ private:
         int seqDim = -1;        // which dimension is the dynamic seq_len (-1 = none)
     };
     std::vector<ArgShape> argShapes;
+    std::vector<bnns_graph_shape_t> dynamicShapes;
+    std::vector<std::array<uint64_t, 8>> dynamicShapeData;
 
     size_t xIdx = 0;
     size_t yIdx = 0;
@@ -65,8 +68,8 @@ private:
     std::vector<bnns_graph_argument_t> args;
     std::vector<const char*> argNames;
 
-    void setDynamicShape(int seqLen);
-    void reallocBuffersForSeqLen(int seqLen);
+    bool setDynamicShape(int seqLen);
+    bool ensureWorkspace(size_t requiredBytes);
 };
 
 // ---------------------------------------------------------------------------

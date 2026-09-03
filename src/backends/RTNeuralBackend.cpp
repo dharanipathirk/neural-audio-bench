@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Dharanipathi Rathna Kumar Balasubramaniam
 #include "RTNeuralBackend.h"
+#include "RTNeuralTopology.h"
+
+#include <algorithm>
 
 // ---------------------------------------------------------------------------
 // RTNeuralEngine — dispatches to compile-time templates based on model+size
@@ -8,6 +11,7 @@
 
 bool RTNeuralEngine::initialize(ModelType modelType, ModelSize modelSize, const std::string& weightsPath)
 {
+    (void) weightsPath;
     currentModel = modelType;
     currentSize = modelSize;
 
@@ -23,7 +27,7 @@ bool RTNeuralEngine::initialize(ModelType modelType, ModelSize modelSize, const 
         default: break;
     }
 
-    // Weights: RTNeural's compile-time templates use C++ default random
+    // Weights: RTNeural's compile-time templates use their default zero/template
     // initialization, which differs from the Python-seeded weights exported
     // for BNNSGraph/LibTorch/ONNX backends. This is acceptable because:
     // 1. This is a speed benchmark — timing depends on architecture and
@@ -43,7 +47,7 @@ bool RTNeuralEngine::initialize(ModelType modelType, ModelSize modelSize, const 
     }
 
     initialized = true;
-    fprintf(stderr, "RTNeuralEngine: Initialized %s/%s (random weights, buffer-at-a-time for TCN/WaveNet)\n",
+    fprintf(stderr, "RTNeuralEngine: Initialized %s/%s (template-initialized weights, buffer-at-a-time for TCN/WaveNet)\n",
             modelTypeName(modelType), modelSizeName(modelSize));
     return true;
 }
@@ -169,7 +173,11 @@ bool RTNeuralBackend::supports(const ModelSpec& spec, std::string& whyNot) const
                  " size=" + spec.size;
         return false;
     }
-    return true;
+
+    if (!InferenceBackend::supports(spec, whyNot))
+        return false;
+
+    return nab::validateRTNeuralCompiledTopology(spec, whyNot);
 }
 
 bool RTNeuralBackend::prepare(const PrepareContext& ctx)
@@ -181,7 +189,7 @@ bool RTNeuralBackend::prepare(const PrepareContext& ctx)
     if (!mapArchSize(*ctx.model, m, s))
         return false;
 
-    // RTNeural uses random weights (see RTNeuralEngine::initialize); the
+    // RTNeural uses template-initialized weights (see initialize()); the
     // weights path is passed through for parity but is not loaded.
     std::string weights;
     auto it = ctx.model->formatPaths.find("rtneural");

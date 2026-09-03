@@ -37,7 +37,6 @@ import time
 from collections import Counter
 from dataclasses import dataclass
 
-
 # AMX operation table (op field = bits 5-9)
 AMX_OPS = {
     0: ("AMXLDX", "Load X matrix register"),
@@ -89,10 +88,7 @@ def decode_amx(insn: int, address: int = 0, library: str = "") -> AMXInstruction
     """Decode a 32-bit AMX instruction word."""
     op = (insn >> 5) & 0x1F
     operand = insn & 0x1F
-    if op in AMX_OPS:
-        mnemonic, description = AMX_OPS[op]
-    else:
-        mnemonic, description = f"AMX_OP{op}", "Unknown AMX operation"
+    mnemonic, description = AMX_OPS.get(op, (f"AMX_OP{op}", "Unknown AMX operation"))
     return AMXInstruction(
         address=address,
         encoding=insn,
@@ -135,7 +131,9 @@ def scan_process(pid: int, sample_addresses: list[int] | None = None) -> list[AM
         print(f"Sampling process {pid} to find hot addresses...", file=sys.stderr)
         sample_result = subprocess.run(
             ["sample", str(pid), "2"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
 
         # Extract addresses from libBNNS.dylib
@@ -153,7 +151,10 @@ def scan_process(pid: int, sample_addresses: list[int] | None = None) -> list[AM
                     addresses.append(int(m.group(1), 16))
 
         if not addresses:
-            print("No BNNS/BLAS addresses found in sample. Process may not be running inference.", file=sys.stderr)
+            print(
+                "No BNNS/BLAS addresses found in sample. Process may not be running inference.",
+                file=sys.stderr,
+            )
             return []
 
         # Find the hottest address region
@@ -180,6 +181,7 @@ def scan_process(pid: int, sample_addresses: list[int] | None = None) -> list[AM
 def launch_and_scan(command: str) -> list[AMXInstruction]:
     """Launch a process, let it run briefly, scan for AMX, then kill it."""
     import shlex
+
     args = shlex.split(command)
     proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     print(f"Launched PID {proc.pid}: {command}", file=sys.stderr)
@@ -229,12 +231,15 @@ def print_results(instructions: list[AMXInstruction], verbose: bool = False):
         # Categorize
         loads = sum(c for n, c in op_counts.items() if "LD" in n)
         stores = sum(c for n, c in op_counts.items() if "ST" in n)
-        compute = sum(c for n, c in op_counts.items()
-                      if any(k in n for k in ["FMA", "FMS", "MAC", "MAT", "VEC"]))
+        compute = sum(
+            c
+            for n, c in op_counts.items()
+            if any(k in n for k in ["FMA", "FMS", "MAC", "MAT", "VEC"])
+        )
         extract = sum(c for n, c in op_counts.items() if "EXTR" in n)
         control = sum(c for n, c in op_counts.items() if n == "AMX17")
 
-        print(f"\nCategory breakdown:")
+        print("\nCategory breakdown:")
         print(f"  Loads:   {loads:>3}  (data → AMX registers)")
         print(f"  Compute: {compute:>3}  (FMA/matrix/vector operations)")
         print(f"  Stores:  {stores:>3}  (AMX registers → memory)")
@@ -248,16 +253,20 @@ def print_results(instructions: list[AMXInstruction], verbose: bool = False):
         fp64 = sum(c for n, c in op_counts.items() if "64" in n and ("FMA" in n or "FMS" in n))
         int16 = sum(c for n, c in op_counts.items() if "MAC16" in n)
         if fp32 or fp16 or fp64 or int16:
-            print(f"\nPrecision:")
-            if fp32: print(f"  FP32:  {fp32} operations")
-            if fp16: print(f"  FP16:  {fp16} operations")
-            if fp64: print(f"  FP64:  {fp64} operations")
-            if int16: print(f"  INT16: {int16} operations")
+            print("\nPrecision:")
+            if fp32:
+                print(f"  FP32:  {fp32} operations")
+            if fp16:
+                print(f"  FP16:  {fp16} operations")
+            if fp64:
+                print(f"  FP64:  {fp64} operations")
+            if int16:
+                print(f"  INT16: {int16} operations")
 
         # Compute intensity
         if loads > 0 and compute > 0:
             print(f"\nCompute intensity: {compute / loads:.2f} compute ops per load")
-            print(f"  (Higher = better AMX utilization, weight reuse)")
+            print("  (Higher = better AMX utilization, weight reuse)")
 
 
 def build_json_output(
@@ -280,7 +289,8 @@ def build_json_output(
         loads = sum(c for n, c in op_counts.items() if "LD" in n)
         stores = sum(c for n, c in op_counts.items() if "ST" in n)
         compute = sum(
-            c for n, c in op_counts.items()
+            c
+            for n, c in op_counts.items()
             if any(k in n for k in ["FMA", "FMS", "MAC", "MAT", "VEC"])
         )
         extract = sum(c for n, c in op_counts.items() if "EXTR" in n)
@@ -323,16 +333,19 @@ def infer_backend(args: argparse.Namespace) -> str:
     if hasattr(args, "launch") and args.launch:
         # Use the basename of the first token of the launch command
         import shlex
+
         tokens = shlex.split(args.launch)
         if tokens:
             import os
+
             return os.path.basename(tokens[0])
     return "unknown"
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Decode Apple AMX instructions in running processes or binaries"
+        description="Decode Apple AMX instructions in running processes or binaries",
+        allow_abbrev=False,
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--pid", type=int, help="Attach to running process by PID")
@@ -346,7 +359,7 @@ def main():
         type=str,
         default=None,
         help="Backend name to embed in JSON output (e.g. BNNSGraph). "
-             "Inferred from --process/--launch when omitted.",
+        "Inferred from --process/--launch when omitted.",
     )
     parser.add_argument(
         "--json-output",
@@ -403,6 +416,7 @@ def main():
         backend = args.backend if args.backend else infer_backend(args)
         payload = build_json_output(instructions, backend=backend, pid=pid_used)
         import os
+
         os.makedirs(os.path.dirname(os.path.abspath(args.json_output)), exist_ok=True)
         with open(args.json_output, "w") as fh:
             json.dump(payload, fh, indent=2)

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Dharanipathi Rathna Kumar Balasubramaniam
 #include "BnnsGraphBackend.h"
 #import <Foundation/Foundation.h>
+#include <algorithm>
 
 // ---------------------------------------------------------------------------
 // BNNSGraphEngine implementation — buffer-at-a-time via dynamic shapes
@@ -12,7 +13,7 @@ static size_t roundUpToPage(size_t bytes)
     return ((bytes + 4095) / 4096) * 4096;
 }
 
-bool BNNSGraphEngine::initialize(const std::string& mlmodelcPath)
+bool BNNSGraphEngine::initialize(const std::string& mlmodelcPath, int preparedBlockSize)
 {
     deinitialize();
 
@@ -30,10 +31,22 @@ bool BNNSGraphEngine::initialize(const std::string& mlmodelcPath)
 
     // Create context
     ctx = BNNSGraphContextMake(graph);
-    BNNSGraphContextSetArgumentType(ctx, BNNSGraphArgumentTypePointer);
+    if (ctx.data == nullptr
+        || BNNSGraphContextSetArgumentType(ctx, BNNSGraphArgumentTypePointer) != 0)
+    {
+        fprintf(stderr, "BNNSGraphEngine: failed to create graph context\n");
+        deinitialize();
+        return false;
+    }
 
     // Discover arguments
     argCount = BNNSGraphGetArgumentCount(graph, nullptr);
+    if (argCount == 0 || argCount == SIZE_MAX)
+    {
+        fprintf(stderr, "BNNSGraphEngine: failed to discover graph arguments\n");
+        deinitialize();
+        return false;
+    }
     buffers.resize(argCount, nullptr);
     bufferSizes.resize(argCount, 0);
     baseBytesPerElem.resize(argCount, 0);
@@ -41,9 +54,16 @@ bool BNNSGraphEngine::initialize(const std::string& mlmodelcPath)
     args.resize(argCount);
     argShapes.resize(argCount);
     argNames.resize(argCount);
+    dynamicShapes.resize(argCount);
+    dynamicShapeData.resize(argCount);
 
-    BNNSGraphGetArgumentNames(graph, nullptr, argCount, argNames.data());
-    BNNSGraphGetArgumentIntents(graph, nullptr, argCount, intents.data());
+    if (BNNSGraphGetArgumentNames(graph, nullptr, argCount, argNames.data()) != 0
+        || BNNSGraphGetArgumentIntents(graph, nullptr, argCount, intents.data()) != 0)
+    {
+        fprintf(stderr, "BNNSGraphEngine: failed to query graph arguments\n");
+        deinitialize();
+        return false;
+    }
 
     // Find input/output positions by name
     xIdx = BNNSGraphGetArgumentPosition(graph, nullptr, "x");
@@ -61,18 +81,29 @@ bool BNNSGraphEngine::initialize(const std::string& mlmodelcPath)
     for (size_t i = 0; i < argCount; i++)
     {
         BNNSTensor tensor{};
-        BNNSGraphContextGetTensor(ctx, nullptr, argNames[i], true, &tensor);
+        if (BNNSGraphContextGetTensor(ctx, nullptr, argNames[i], true, &tensor) != 0
+            || tensor.rank == 0 || tensor.rank > 8)
+        {
+            fprintf(stderr, "BNNSGraphEngine: invalid tensor metadata for argument '%s'\n",
+                    argNames[i]);
+            deinitialize();
+            return false;
+        }
 
         auto& as = argShapes[i];
         as.rank = tensor.rank;
         as.seqDim = -1;
 
-        size_t elemBytes;
+        size_t elemBytes = 0;
         switch (tensor.data_type)
         {
             case BNNSDataTypeFloat16: elemBytes = sizeof(_Float16); break;
             case BNNSDataTypeFloat32: elemBytes = sizeof(float); break;
-            default: elemBytes = sizeof(_Float16); break;
+            default:
+                fprintf(stderr, "BNNSGraphEngine: unsupported data type for argument '%s'\n",
+                        argNames[i]);
+                deinitialize();
+                return false;
         }
 
         size_t staticBytes = elemBytes;
@@ -109,15 +140,27 @@ bool BNNSGraphEngine::initialize(const std::string& mlmodelcPath)
 
         size_t pageAligned = roundUpToPage(allocBytes);
         buffers[i] = aligned_alloc(4096, pageAligned);
+        if (buffers[i] == nullptr)
+        {
+            fprintf(stderr, "BNNSGraphEngine: failed to allocate argument '%s'\n", argNames[i]);
+            deinitialize();
+            return false;
+        }
         memset(buffers[i], 0, pageAligned);
         bufferSizes[i] = pageAligned;
+
     }
 
-    // Allocate workspace
-    wsSize = BNNSGraphContextGetWorkspaceSize(ctx, nullptr) + 4096;
-    workspace = (char*)aligned_alloc(4096, wsSize);
-
-    currentSeqLen = 0;  // will be set on first processBlock call
+    // Configure the host's normal block size and allocate the exact workspace
+    // required for that dynamic shape before any audio callback runs. Further
+    // configured shapes are established during the benchmark's untimed warmup.
+    currentSeqLen = 0;
+    const int initialSeqLen = std::clamp(preparedBlockSize, 1, kMaxBufferSize);
+    if (!setDynamicShape(initialSeqLen))
+    {
+        deinitialize();
+        return false;
+    }
 
     fprintf(stderr, "BNNSGraphEngine: Loaded %s (%zu args, x=%zu, y=%zu, buffer-at-a-time)\n",
             mlmodelcPath.c_str(), argCount, xIdx, yIdx);
@@ -138,49 +181,82 @@ void BNNSGraphEngine::deinitialize()
     intents.clear();
     args.clear();
     argShapes.clear();
+    argNames.clear();
+    dynamicShapes.clear();
+    dynamicShapeData.clear();
 
     if (workspace) { free(workspace); workspace = nullptr; }
+    wsSize = 0;
     if (ctx.data)  { BNNSGraphContextDestroy(ctx); ctx = {}; }
     if (graph.data) { free(graph.data); graph = {}; }
 
     currentSeqLen = 0;
 }
 
-void BNNSGraphEngine::setDynamicShape(int seqLen)
+bool BNNSGraphEngine::ensureWorkspace(size_t requiredBytes)
+{
+    if (requiredBytes <= wsSize && workspace != nullptr)
+        return true;
+
+    const size_t allocationSize = roundUpToPage(std::max<size_t>(requiredBytes, 1));
+    auto* replacement = static_cast<char*>(aligned_alloc(4096, allocationSize));
+    if (replacement == nullptr)
+    {
+        fprintf(stderr, "BNNSGraphEngine: failed to allocate %zu-byte workspace\n",
+                allocationSize);
+        return false;
+    }
+
+    free(workspace);
+    workspace = replacement;
+    wsSize = allocationSize;
+    return true;
+}
+
+bool BNNSGraphEngine::setDynamicShape(int seqLen)
 {
     if (seqLen == currentSeqLen)
-        return;
+        return true;
+    if (seqLen <= 0 || seqLen > kMaxBufferSize)
+        return false;
 
-    // Build bnns_graph_shape_t array — one entry per argument.
-    // For static arguments, shape is 0-filled (rank=0) which tells BNNS to
-    // use the compiled default.  For dynamic arguments (x, y), we set the
-    // actual seq_len.
-    std::vector<bnns_graph_shape_t> shapes(argCount);
-    std::vector<std::vector<uint64_t>> shapeData(argCount);
+    // Reuse storage allocated by initialize(): changing shape during an audio
+    // callback must not allocate merely to construct the BNNS descriptors.
 
     for (size_t i = 0; i < argCount; i++)
     {
         auto& as = argShapes[i];
         if (as.seqDim >= 0)
         {
-            shapeData[i].resize(as.rank);
             for (size_t d = 0; d < as.rank; d++)
-                shapeData[i][d] = (d == static_cast<size_t>(as.seqDim))
+                dynamicShapeData[i][d] = (d == static_cast<size_t>(as.seqDim))
                     ? static_cast<uint64_t>(seqLen)
                     : static_cast<uint64_t>(as.shape[d]);
-            shapes[i].rank = as.rank;
-            shapes[i].shape = shapeData[i].data();
+            dynamicShapes[i].rank = as.rank;
+            dynamicShapes[i].shape = dynamicShapeData[i].data();
         }
         else
         {
-            // Static shape — rank=0 tells BNNS to keep compiled shape
-            shapes[i].rank = 0;
-            shapes[i].shape = nullptr;
+            dynamicShapes[i].rank = 0;
+            dynamicShapes[i].shape = nullptr;
         }
     }
 
-    BNNSGraphContextSetDynamicShapes(ctx, nullptr, argCount, shapes.data());
+    const int shapeResult = BNNSGraphContextSetDynamicShapes(
+        ctx, nullptr, argCount, dynamicShapes.data());
+    if (shapeResult < 0)
+    {
+        fprintf(stderr, "BNNSGraphEngine: failed to set dynamic shape %d (status %d)\n",
+                seqLen, shapeResult);
+        return false;
+    }
+
+    const size_t requiredWorkspace = BNNSGraphContextGetWorkspaceSize(ctx, nullptr);
+    if (!ensureWorkspace(requiredWorkspace))
+        return false;
+
     currentSeqLen = seqLen;
+    return true;
 }
 
 void BNNSGraphEngine::processBlock(const float* input, float* output, int numSamples)
@@ -196,12 +272,23 @@ void BNNSGraphEngine::processBlock(const float* input, float* output, int numSam
         int chunk = std::min(numSamples - offset, kMaxBufferSize);
 
         // Set dynamic shapes if chunk size changed
-        setDynamicShape(chunk);
+        if (!setDynamicShape(chunk))
+        {
+            std::fill_n(output + offset, chunk, 0.0f);
+            offset += chunk;
+            continue;
+        }
 
-        // Convert float input -> fp16 input buffer
-        _Float16* xBuf = (_Float16*)buffers[xIdx];
-        for (int i = 0; i < chunk; i++)
-            xBuf[i] = (_Float16)input[offset + i];
+        if (baseBytesPerElem[xIdx] == sizeof(float))
+        {
+            memcpy(buffers[xIdx], input + offset, static_cast<size_t>(chunk) * sizeof(float));
+        }
+        else
+        {
+            auto* xBuf = static_cast<_Float16*>(buffers[xIdx]);
+            for (int i = 0; i < chunk; i++)
+                xBuf[i] = static_cast<_Float16>(input[offset + i]);
+        }
 
         // Build argument list — compute actual byte sizes for this chunk
         for (size_t i = 0; i < argCount; i++)
@@ -215,12 +302,26 @@ void BNNSGraphEngine::processBlock(const float* input, float* output, int numSam
         }
 
         // Single Execute for this chunk
-        BNNSGraphContextExecute(ctx, nullptr, argCount, args.data(), wsSize, workspace);
+        const int executeResult = BNNSGraphContextExecute(
+            ctx, nullptr, argCount, args.data(), wsSize, workspace);
+        if (executeResult != 0)
+        {
+            fprintf(stderr, "BNNSGraphEngine: execution failed (status %d)\n", executeResult);
+            std::fill_n(output + offset, chunk, 0.0f);
+            offset += chunk;
+            continue;
+        }
 
-        // Convert fp16 output -> float
-        _Float16* yBuf = (_Float16*)buffers[yIdx];
-        for (int i = 0; i < chunk; i++)
-            output[offset + i] = (float)yBuf[i];
+        if (baseBytesPerElem[yIdx] == sizeof(float))
+        {
+            memcpy(output + offset, buffers[yIdx], static_cast<size_t>(chunk) * sizeof(float));
+        }
+        else
+        {
+            auto* yBuf = static_cast<_Float16*>(buffers[yIdx]);
+            for (int i = 0; i < chunk; i++)
+                output[offset + i] = static_cast<float>(yBuf[i]);
+        }
 
         offset += chunk;
     }
@@ -231,7 +332,6 @@ void BNNSGraphEngine::resetState()
     for (size_t i = 0; i < argCount; i++)
         if (intents[i] == BNNSGraphArgumentIntentInOut)
             memset(buffers[i], 0, bufferSizes[i]);
-    currentSeqLen = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -245,5 +345,5 @@ bool BnnsGraphBackend::prepare(const PrepareContext& ctx)
     auto it = ctx.model->formatPaths.find("coreml");
     if (it == ctx.model->formatPaths.end())
         return false;
-    return engine.initialize(it->second);
+    return engine.initialize(it->second, ctx.maxBlockSize);
 }

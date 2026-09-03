@@ -10,6 +10,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "coremltools>=9.0",
+    "jsonschema>=4.23",
     "matplotlib>=3.10.8",
     "numpy>=2.4.4",
     "onnx>=1.21.0",
@@ -33,7 +34,6 @@ packages = ["python/neural_audio_bench"]
 dev = [
     "pytest>=8.0",
     "ruff>=0.9",
-    "jsonschema>=4.23",
     "pre-commit>=4.0",
 ]
 

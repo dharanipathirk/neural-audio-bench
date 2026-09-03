@@ -12,7 +12,6 @@ authors:
 license: GPL-3.0-or-later
 repository-code: https://github.com/dharanipathirk/neural-audio-bench
 version: 1.0.0
-date-released: 2026-07-05
 keywords:
   - neural-audio
   - real-time
@@ -28,6 +27,9 @@ preferred-citation:
   authors:
     - family-names: Rathna Kumar Balasubramaniam
       given-names: Dharanipathi
+      affiliation: Maynooth University
+    - family-names: Ramachandran
+      given-names: Saravanabalagi
       affiliation: Maynooth University
     - family-names: Timoney
       given-names: Joseph
